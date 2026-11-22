@@ -7,7 +7,7 @@
       "name": "taskboard",
       "source": "./plugins/taskboard",
       "description": "Live dark-mode kanban board that agents fill and update while they work. Runs only while Claude Code sessions run.",
-      "version": "1.6.0"
+      "version": "1.7.1"
     }
   ]
 }

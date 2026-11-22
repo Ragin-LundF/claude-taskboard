@@ -137,6 +137,7 @@ class BoardNode {
     this.conflict = null;
     this.state = this.load();
     log('leading board at', this.url);
+    this.updateAnswerMarker();
     this.updateApiPolling();
     if (process.env.TASKBOARD_USAGE !== '0') {
       this.usage = new UsageTracker();
@@ -227,9 +228,23 @@ class BoardNode {
       } };
   }
 
+  /** Marker file that exists only while answered questions wait for pickup; hooks test it before doing any work. */
+  updateAnswerMarker() {
+    if (!this.state) return;
+    const marker = path.join(HOME, '.answers-ready');
+    const waiting = Object.values(this.state.questions || {}).filter((q) => q.status === 'answered' && !q.delivered);
+    try {
+      if (waiting.length) {
+        fs.mkdirSync(HOME, { recursive: true });
+        fs.writeFileSync(marker, JSON.stringify(waiting.map((q) => ({ id: q.id, pid: q.askerPid, project: q.project }))));
+      } else if (fs.existsSync(marker)) fs.unlinkSync(marker);
+    } catch (e) { log('answer marker failed', e.message); }
+  }
+
   applyLocal(op, args) {
     if (op === 'usage') return this.usageSummary || { hasData: false, pending: true };
     const { result, changed } = board.apply(this.state, op, args);
+    if (changed) this.updateAnswerMarker();
     if (op === 'setLimitsSource') { clearInterval(this.apiTimer); this.apiTimer = null; this.updateApiPolling(); }
     if (changed) { this.scheduleSave(); this.broadcast(); }
     return result;

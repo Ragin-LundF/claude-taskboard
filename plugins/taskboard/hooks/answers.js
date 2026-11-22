@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Stop / UserPromptSubmit hook.
+ * Stop / UserPromptSubmit / PostToolUse hook.
+ *  PostToolUse runs after every tool call but is guarded in hooks.json by a file test, so this
+ *  script only starts while answered questions are waiting (the leader keeps .answers-ready).
  *  1. Delivers answers the user gave on the taskboard to the session that asked (matched by the
  *     Claude Code process id, falling back to the project).
  *     - Stop: the agent continues with the answers instead of stopping.
@@ -102,8 +104,8 @@ async function main() {
     const text = `The user answered on the taskboard:\n${answers.map((q) => `- ${q.id}${q.externalId ? ` [${q.externalId}]` : ''} "${q.question}" → ${q.answer}`).join('\n')}\nIf these questions come from a file, record the decisions there.`;
     if (event === 'Stop' || event === 'SubagentStop') {
       process.stdout.write(JSON.stringify({ decision: 'block', reason: `${text}\nContinue the work using these answers.` }));
-    } else if (event === 'UserPromptSubmit') {
-      process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } }));
+    } else if (event === 'UserPromptSubmit' || event === 'PostToolUse') {
+      process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: `${text}\nTake these answers into account in your next steps.` } }));
     }
     return;
   }

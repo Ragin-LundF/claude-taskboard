@@ -52,9 +52,10 @@ by project (the git root of the session).
      `reject` (red), `neutral` (blue, anything in between). Mark your preferred option with
      `recommended: true` instead of writing "(Recommended)" into the label, and use
      `description` to explain consequences of complex choices (shown under the label).
-   - answers arrive automatically on your next turn (formatted `Q-3 [your id] → ACCEPTED …`,
-     `REJECTED — instead: …`, `CHOSE: …`, or free text); you can also call `board_answers`
-     (`includeOpen: true` shows what is still waiting). Write decisions back into the questions
+   - answers arrive automatically, usually right after your next tool call (formatted
+     `Q-3 [your id] → ACCEPTED …`, `REJECTED — instead: …`, `CHOSE: …`, or free text).
+     **Do not poll `board_answers`**: every call costs tokens and answers come by themselves. Use
+     it only when the user asks, or with `includeOpen: true` to see what is still open. Write decisions back into the questions
      file if there is one.
    - don't stop and wait for answers you don't need yet: keep working on other cards, or mark
      the dependent card blocked.

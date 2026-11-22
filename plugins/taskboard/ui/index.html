@@ -245,8 +245,9 @@
   .btn.opt-accept { background: var(--done); color: #06170f; }
   .btn.opt-reject { background: var(--blocked); color: #1d0609; }
   .btn.opt-neutral { background: #3d7bfd; color: #fff; }
-  .btn.rec { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #ffd166; }
-  .star { font-size: 10px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; background: #ffd166; color: #2a1d00; padding: 1px 6px; border-radius: 5px; margin-left: 6px; vertical-align: 1px; }
+  .btn.rec { box-shadow: 0 0 0 2px var(--card), 0 0 0 3px rgba(230,234,242,.55); }
+  .star { font-size: 10px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; background: rgba(0,0,0,.28); color: inherit; padding: 1px 6px; border-radius: 5px; margin-left: 7px; vertical-align: 1px; white-space: nowrap; }
+  .q-optcard .star { background: #ffd166; color: #2a1d00; }
   .q-optcards { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
   .q-optcard { display: block; width: 100%; text-align: left; border: 1px solid var(--line); border-left: 4px solid var(--oc); background: var(--card-hover); border-radius: 10px; padding: 10px 12px; cursor: pointer; color: var(--text); transition: background .15s, transform .05s; }
   .q-optcard:hover { background: color-mix(in srgb, var(--oc) 14%, var(--card)); }
@@ -255,8 +256,14 @@
   .q-optcard .ol { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
   .q-optcard .ol i { width: 10px; height: 10px; border-radius: 3px; background: var(--oc); flex: none; }
   .q-optcard .od { color: var(--muted); font-size: 13px; margin-top: 4px; white-space: pre-wrap; line-height: 1.45; }
-  .q-optcard.t-accept { --oc: var(--done); } .q-optcard.t-reject { --oc: var(--blocked); } .q-optcard.t-neutral { --oc: #3d7bfd; }
+  .q-optcard.t-accept { --oc: var(--done); } .q-optcard.t-reject { --oc: var(--blocked); } .q-optcard.t-neutral { --oc: #5b8dff; }
+  .q-optcards.inline { flex-direction: row; flex-wrap: wrap; }
+  .q-optcards.inline .q-optcard { width: auto; flex: 0 1 auto; padding: 8px 14px; }
+  .q-decide.q-optcards.inline .q-optcard { flex: 1 1 0; min-width: 160px; }
+  .q-optcard .ol { color: color-mix(in srgb, var(--oc) 45%, var(--text)); }
+  .q-optcard:focus-visible { outline: 2px solid var(--oc); outline-offset: 2px; }
   .q-legend { display: flex; gap: 12px; font-size: 11px; color: var(--faint); margin: 2px 2px 0; }
+  .q-legend .lg-star::before { display: none; }
   .q-legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; background: var(--c); }
   .spin { display: inline-block; width: 13px; height: 13px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: rot .8s linear infinite; vertical-align: -2px; flex: none; }
   @keyframes rot { to { transform: rotate(360deg); } }
@@ -351,7 +358,7 @@
   let state = { projects: {}, tasks: [], questions: [] };
   let usage = null;
   const qDrafts = {};
-  const UI_VERSION = '1.6.0';
+  const UI_VERSION = '1.7.1';
   const pending = {}; // question id -> { label, error, args }
   let showHistory = false;
   let prevQuestions = null;
@@ -614,11 +621,9 @@
       const opts = (q.options || []).map(optOf);
       if (!opts.length) return '';
       const star = (o) => (o.recommended ? '<span class="star">★ Recommended</span>' : '');
-      if (opts.some((o) => o.description)) {
-        return `<div class="q-optcards">${opts.map((o, i) => `<button class="q-optcard t-${esc(o.type)}${o.recommended ? ' rec' : ''}" data-qopt="${esc(q.id)}" data-i="${i}">
+      const inline = !opts.some((o) => o.description);
+      return `<div class="q-optcards${inline ? ' inline' : ''}">${opts.map((o, i) => `<button class="q-optcard t-${esc(o.type)}${o.recommended ? ' rec' : ''}" data-qopt="${esc(q.id)}" data-i="${i}">
           <span class="ol"><i></i>${esc(o.label)}${star(o)}</span>${o.description ? `<span class="od">${esc(o.description)}</span>` : ''}</button>`).join('')}</div>`;
-      }
-      return `<div class="q-opts">${opts.map((o, i) => `<button class="btn sm opt-${esc(o.type)}${o.recommended ? ' rec' : ''}" data-qopt="${esc(q.id)}" data-i="${i}">${esc(o.label)}${star(o)}</button>`).join('')}</div>`;
     };
     const DECISION = { accept: 'Accepted', reject: 'Rejected', option: 'Chosen', answer: 'Answered', dismissed: 'Dismissed' };
     const qHtml = (q) => {
@@ -636,7 +641,7 @@
       }
       if (q.status === 'open') {
         const decide = q.recommendation
-          ? `<div class="q-decide"><button class="btn sm done" data-qdecide="accept" data-q="${esc(q.id)}">Accept</button><button class="btn sm danger" data-qdecide="reject" data-q="${esc(q.id)}">Reject</button></div>`
+          ? `<div class="q-optcards inline q-decide"><button class="q-optcard t-accept" data-qdecide="accept" data-q="${esc(q.id)}"><span class="ol"><i></i>Accept recommendation</span></button><button class="q-optcard t-reject" data-qdecide="reject" data-q="${esc(q.id)}"><span class="ol"><i></i>Reject</span></button></div>`
           : '';
         return `<div class="q open"><div class="q-top">${meta}<span class="q-state">${esc(ago(q.createdAt))}</span></div>
           <div class="q-text">${esc(q.question)}</div>
@@ -732,7 +737,8 @@
     if (e.target.id === 'histToggle') { showHistory = !showHistory; renderQuestions(); return; }
     if (d.qretry) { submitPending(d.qretry); return; }
     if (d.qedit) { if (pending[d.qedit] && pending[d.qedit].draft) qDrafts[d.qedit] = pending[d.qedit].draft; delete pending[d.qedit]; renderQuestions(); return; }
-    if (d.qdecide) sendAnswer(d.q, d.qdecide, draftOf(d.q));
+    const decideEl = e.target.closest && e.target.closest('[data-qdecide]');
+    if (decideEl) sendAnswer(decideEl.dataset.q, decideEl.dataset.qdecide, draftOf(decideEl.dataset.q));
     else if (d.qopt || (e.target.closest && e.target.closest('[data-qopt]'))) {
       const el = d.qopt ? e.target : e.target.closest('[data-qopt]');
       const q = state.questions.find((x) => x.id === el.dataset.qopt);

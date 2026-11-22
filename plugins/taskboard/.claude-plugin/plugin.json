@@ -1,6 +1,6 @@
 {
   "name": "taskboard",
-  "version": "1.6.0",
+  "version": "1.7.1",
   "description": "Live dark-mode kanban board for big implementations. Agents plan, split, claim and finish tasks; you watch and clear finished cards. Runs only while Claude Code sessions run.",
   "author": {
     "name": "Ragin"

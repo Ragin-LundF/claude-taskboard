@@ -119,9 +119,13 @@ description and recommendation.
 - **Free text** for anything else.
 
 After you answer, the card shows **Sending…**, then **Answer saved, waiting for the agent**. When
-the agent has picked it up you see **✓ received** and the question moves to the history. An
-agent that is waiting gets the answer immediately; otherwise it arrives with the agent's next turn
-or your next message to it.
+the agent has picked it up you see **✓ received** and the question moves to the history.
+
+Agents see your answer **right after their next step** (tool call), at the end of their turn, or
+with your next message to them; an agent waiting in `board_ask` gets it immediately. This costs
+**no tokens while nothing is waiting**: the board keeps a marker file only while answers wait for
+pickup, and the hook checks it with a single file test (~2 ms) before doing anything else. An
+agent that has already stopped can't be woken up; send it any message to hand the answer over.
 
 The agent receives the decision together with its own question id, for example
 `Q-1 [Q-12] → CHOSE: Per plan (accept) — your recommended option`, and writes it back to its
