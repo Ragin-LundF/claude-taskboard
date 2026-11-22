@@ -137,6 +137,30 @@ function resolveQid(state, id) {
   return key;
 }
 
+/** Question text for duplicate detection: case, punctuation and a leading "Q148:" style prefix ignored. */
+function normQuestion(text) {
+  return String(text || '').toLowerCase().replace(/^\s*\[?[a-z]{0,4}-?\d+\]?\s*[:.)-]\s*/, '').replace(/[^a-z0-9äöüß]+/g, ' ').trim();
+}
+
+/** Open questions that duplicate q (pushed again with q's board id or q's own id) get q's answer. */
+function settleDuplicates(state, q) {
+  const keys = new Set([q.id, (q.externalId || '').toUpperCase()].filter(Boolean));
+  for (const d of Object.values(state.questions)) {
+    if (d === q || d.status !== 'open' || d.project !== q.project) continue;
+    if (!keys.has((d.externalId || '').toUpperCase())) continue;
+    Object.assign(d, {
+      status: 'answered', decision: q.decision, comment: `Same question as ${q.id}${q.comment ? ` — ${q.comment}` : ''}`,
+      chosenOption: q.chosenOption || null, answer: q.answer, dismissed: !!q.dismissed,
+      answeredAt: now(), delivered: true, deliveredAt: now(), duplicateOf: q.id,
+    });
+  }
+}
+
+function deliver(state, q) {
+  if (q.status === 'answered' && !q.delivered) { q.delivered = true; q.deliveredAt = now(); }
+  settleDuplicates(state, q);
+}
+
 function qBrief(q) {
   return {
     id: q.id, externalId: q.externalId || null, question: q.question, taskId: q.taskId, status: q.status,
@@ -263,13 +287,23 @@ const ops = {
     const externalId = str(a.externalId, 80).trim() || null;
     if (externalId) {
       // same id pushed again (e.g. from a questions file): update an open question, never duplicate
-      const existing = Object.values(state.questions).find((q) => q.project === project && q.externalId === externalId && !q.hidden);
+      const up = externalId.toUpperCase();
+      const existing = Object.values(state.questions).find((q) => q.project === project && !q.hidden && ((q.externalId || '').toUpperCase() === up || q.id === up));
       if (existing) {
         if (existing.status === 'open') {
           Object.assign(existing, f, { taskId: taskId || existing.taskId, askerPid: Number(a.askerPid) || existing.askerPid });
           return { ...qBrief(existing), existing: true };
         }
         return { ...qBrief(existing), existing: true };
+      }
+    }
+    // same question text in the same project (re-asked without an id, e.g. after a restart): reuse it
+    const norm = normQuestion(f.question);
+    if (norm.length >= 8) {
+      const same = Object.values(state.questions).find((q) => q.project === project && !q.hidden && normQuestion(q.question) === norm);
+      if (same) {
+        if (same.status === 'open') { Object.assign(same, { ...f, question: same.question }, { askerPid: Number(a.askerPid) || same.askerPid }); if (externalId && !same.externalId) same.externalId = externalId; }
+        return { ...qBrief(same), existing: true };
       }
     }
     const id = `Q-${state.nextQid++}`;
@@ -287,6 +321,21 @@ const ops = {
     const out = [];
     for (const q of a.questions.slice(0, 50)) {
       out.push(ops.ask(state, { ...q, externalId: q.externalId || q.id, project: a.project, projectName: a.projectName, askedBy: q.askedBy || a.askedBy, askerPid: a.askerPid }));
+    }
+    return { questions: out };
+  },
+
+  /** Status and answers of specific questions (board ids like Q-3 or the agent's own ids), delivered before or not. */
+  questionStatus(state, a) {
+    const want = (a.ids || []).map((x) => String(x).trim().toUpperCase()).filter(Boolean);
+    const out = [];
+    for (const w of want) {
+      const q = state.questions[w] || state.questions[/^\d+$/.test(w) ? `Q-${w}` : '']
+        || Object.values(state.questions).find((x) => (x.externalId || '').toUpperCase() === w && (!a.project || x.project === a.project))
+        || Object.values(state.questions).find((x) => (x.externalId || '').toUpperCase() === w);
+      if (!q) { out.push({ id: w, missing: true }); continue; }
+      deliver(state, q);
+      out.push(qBrief(q));
     }
     return { questions: out };
   },
@@ -342,19 +391,22 @@ const ops = {
 
   markDelivered(state, a) {
     const q = state.questions[resolveQid(state, a.id)];
-    if (q.status === 'answered' && !q.delivered) { q.delivered = true; q.deliveredAt = now(); }
+    deliver(state, q);
     return qBrief(q);
   },
 
   /** Hand answered-but-undelivered questions to the asking session (matched by Claude process id, else project). */
   takeAnswers(state, a) {
     const pids = new Set((a.pids || []).map(Number).filter(Boolean));
+    const dead = new Set((a.deadPids || []).map(Number));
     const out = [];
     for (const q of Object.values(state.questions)) {
       if (q.status !== 'answered' || q.delivered) continue;
-      const mine = q.askerPid && pids.size ? pids.has(q.askerPid) : (a.project && q.project === a.project);
+      const sameProject = a.project && q.project === a.project;
+      // the asking session matches by process id; if that process is gone (restart, --continue), any session of the project takes it
+      const mine = q.askerPid && pids.size ? (pids.has(q.askerPid) || (dead.has(q.askerPid) && sameProject)) : sameProject;
       if (!mine) continue;
-      q.delivered = true; q.deliveredAt = now();
+      deliver(state, q);
       out.push(qBrief(q));
     }
     return { answers: out };

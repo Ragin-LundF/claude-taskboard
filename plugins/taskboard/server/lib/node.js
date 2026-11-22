@@ -228,6 +228,14 @@ class BoardNode {
       } };
   }
 
+  /** Process ids of askers with undelivered answers whose Claude process no longer exists. */
+  deadAskerPids() {
+    const pids = new Set(Object.values(this.state.questions || {}).filter((q) => q.status === 'answered' && !q.delivered && q.askerPid).map((q) => q.askerPid));
+    return [...pids].filter((pid) => {
+      try { process.kill(pid, 0); return false; } catch (e) { return e.code !== 'EPERM'; }
+    });
+  }
+
   /** Marker file that exists only while answered questions wait for pickup; hooks test it before doing any work. */
   updateAnswerMarker() {
     if (!this.state) return;
@@ -243,6 +251,7 @@ class BoardNode {
 
   applyLocal(op, args) {
     if (op === 'usage') return this.usageSummary || { hasData: false, pending: true };
+    if (op === 'takeAnswers') args = { ...args, deadPids: this.deadAskerPids() };
     const { result, changed } = board.apply(this.state, op, args);
     if (changed) this.updateAnswerMarker();
     if (op === 'setLimitsSource') { clearInterval(this.apiTimer); this.apiTimer = null; this.updateApiPolling(); }

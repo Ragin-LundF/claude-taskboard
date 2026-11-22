@@ -9,7 +9,7 @@ const { spawn } = require('child_process');
 const { detectProject, PORT, HOME } = require('./lib/config');
 const { BoardNode } = require('./lib/node');
 
-const VERSION = '1.7.1';
+const VERSION = '1.7.2';
 const SUPPORTED_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const project = detectProject(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const node = new BoardNode();
@@ -200,9 +200,14 @@ const TOOLS = [
   },
   {
     name: 'board_answers',
-    description: 'Fetch answers the user gave on the taskboard that you have not received yet (with your question ids and the decision: ACCEPTED / REJECTED / CHOSE / free text). Use includeOpen to see which questions are still waiting.',
-    inputSchema: { type: 'object', properties: { includeOpen: { type: 'boolean' } } },
+    description: 'Fetch answers the user gave on the taskboard that you have not received yet (with your question ids and the decision: ACCEPTED / REJECTED / CHOSE / free text). Pass ids (board ids like "Q-3" or your own ids like "Q148") to get the status and answer of specific questions, even if they were delivered before (e.g. to a previous session). Use includeOpen to see which questions are still waiting.',
+    inputSchema: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } }, includeOpen: { type: 'boolean' } } },
     run: async (a) => {
+      if (Array.isArray(a.ids) && a.ids.length) {
+        const r = await node.op('questionStatus', { ids: a.ids, project: project.path });
+        return r.questions.map((q) => (q.missing ? `${q.id}: not found on the board`
+          : `${q.id}${q.externalId ? ` [${q.externalId}]` : ''} "${q.question}"\n→ ${q.status === 'open' ? 'still open (no answer yet)' : q.answer}`)).join('\n\n');
+      }
       const r = await node.op('takeAnswers', { pids: [process.ppid], project: project.path });
       const out = r.answers.length
         ? r.answers.map((q) => `${q.id}${q.externalId ? ` [${q.externalId}]` : ''} "${q.question}"\n→ ${q.answer}`).join('\n\n')

@@ -55,8 +55,12 @@ by project (the git root of the session).
    - answers arrive automatically, usually right after your next tool call (formatted
      `Q-3 [your id] → ACCEPTED …`, `REJECTED — instead: …`, `CHOSE: …`, or free text).
      **Do not poll `board_answers`**: every call costs tokens and answers come by themselves. Use
-     it only when the user asks, or with `includeOpen: true` to see what is still open. Write decisions back into the questions
-     file if there is one.
+     it only when the user asks, with `ids: [...]` to look up specific questions (also answers that
+     went to an earlier session), or with `includeOpen: true` to see what is still open. Write
+     decisions back into the questions file if there is one.
+   - never ask a question twice. Before asking again (e.g. after a restart or when you lost
+     track), look it up with `board_answers` and `ids: [...]`. Re-pushing the same id or the same
+     question text returns the existing entry (with its answer if it has one) instead of a new one.
    - don't stop and wait for answers you don't need yet: keep working on other cards, or mark
      the dependent card blocked.
    - subagents can ask too; tell them to pass their own name as `askedBy`.
