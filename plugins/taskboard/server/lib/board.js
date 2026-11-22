@@ -156,6 +156,28 @@ function settleDuplicates(state, q) {
   }
 }
 
+/** Open duplicates of any answered question get its answer (returns how many were settled). */
+function settleAllDuplicates(state) {
+  let n = 0;
+  // open copies of open questions (pushed again with the board id as own id): keep only the original
+  for (const d of Object.values(state.questions)) {
+    if (d.status !== 'open' || d.hidden || !d.externalId) continue;
+    const orig = state.questions[(d.externalId || '').toUpperCase()];
+    if (orig && orig !== d && orig.project === d.project && orig.status === 'open' && !orig.hidden) {
+      d.hidden = true; d.duplicateOf = orig.id;
+      if (d.askerPid) orig.askerPid = d.askerPid; // the answer goes to the session that asked last
+      n++;
+    }
+  }
+  for (const q of Object.values(state.questions)) {
+    if (q.status !== 'answered' || q.duplicateOf) continue;
+    const before = Object.values(state.questions).filter((d) => d.status === 'open').length;
+    settleDuplicates(state, q);
+    n += before - Object.values(state.questions).filter((d) => d.status === 'open').length;
+  }
+  return n;
+}
+
 function deliver(state, q) {
   if (q.status === 'answered' && !q.delivered) { q.delivered = true; q.deliveredAt = now(); }
   settleDuplicates(state, q);
@@ -294,6 +316,7 @@ const ops = {
           Object.assign(existing, f, { taskId: taskId || existing.taskId, askerPid: Number(a.askerPid) || existing.askerPid });
           return { ...qBrief(existing), existing: true };
         }
+        deliver(state, existing); // the agent receives the answer right here
         return { ...qBrief(existing), existing: true };
       }
     }
@@ -303,6 +326,7 @@ const ops = {
       const same = Object.values(state.questions).find((q) => q.project === project && !q.hidden && normQuestion(q.question) === norm);
       if (same) {
         if (same.status === 'open') { Object.assign(same, { ...f, question: same.question }, { askerPid: Number(a.askerPid) || same.askerPid }); if (externalId && !same.externalId) same.externalId = externalId; }
+        else deliver(state, same);
         return { ...qBrief(same), existing: true };
       }
     }
@@ -388,6 +412,8 @@ const ops = {
   getQuestion(state, a) {
     return qBrief(state.questions[resolveQid(state, a.id)]);
   },
+
+  cleanup() { return { __noChange: true }; },
 
   markDelivered(state, a) {
     const q = state.questions[resolveQid(state, a.id)];
@@ -564,9 +590,10 @@ function apply(state, op, args) {
   if (!state.questions) { state.questions = {}; state.nextQid = 1; }
   const result = fn(state, args || {});
   const changed = !READ_ONLY.has(op) && !(result && result.__noChange);
-  if (changed) {
-    rollup(state);
-    state.rev++;
+  if (changed || op === 'cleanup') {
+    const settled = settleAllDuplicates(state);
+    if (changed || settled) { rollup(state); state.rev++; }
+    return { result, changed: changed || settled > 0 };
   }
   return { result, changed };
 }

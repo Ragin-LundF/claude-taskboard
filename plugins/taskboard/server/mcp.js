@@ -9,7 +9,7 @@ const { spawn } = require('child_process');
 const { detectProject, PORT, HOME } = require('./lib/config');
 const { BoardNode } = require('./lib/node');
 
-const VERSION = '1.7.2';
+const VERSION = '1.7.3';
 const SUPPORTED_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const project = detectProject(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const node = new BoardNode();

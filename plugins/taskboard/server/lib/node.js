@@ -137,6 +137,7 @@ class BoardNode {
     this.conflict = null;
     this.state = this.load();
     log('leading board at', this.url);
+    try { const { changed } = board.apply(this.state, 'cleanup', {}); if (changed) this.scheduleSave(); } catch (e) { log('cleanup failed', e.message); }
     this.updateAnswerMarker();
     this.updateApiPolling();
     if (process.env.TASKBOARD_USAGE !== '0') {

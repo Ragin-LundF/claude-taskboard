@@ -293,6 +293,7 @@
   .q-actions .spacer { flex: 1; }
   .q-actions .link { background: transparent; border: 0; color: var(--faint); font-size: 12px; cursor: pointer; padding: 0 4px; }
   .q-actions .link:hover { color: var(--text); }
+  .q-actions .link.danger-link { color: var(--blocked); font-weight: 700; }
   .badge { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; }
   .badge.accept { background: var(--done); color: #06170f; }
   .badge.reject { background: var(--blocked); color: #1d0609; }
@@ -358,9 +359,10 @@
   let state = { projects: {}, tasks: [], questions: [] };
   let usage = null;
   const qDrafts = {};
-  const UI_VERSION = '1.7.2';
+  const UI_VERSION = '1.7.3';
   const pending = {}; // question id -> { label, error, args }
   let showHistory = false;
+  let confirmQDelete = null;
   let prevQuestions = null;
   let dragId = null;
   let renderPending = false;
@@ -649,7 +651,7 @@
           ${rec}${decide}
           ${renderOptions(q)}
           <textarea data-qtext="${esc(q.id)}" placeholder="${q.recommendation ? 'Optional comment for Accept / Reject, or your own answer…' : 'Type an answer…'} (⌘/Ctrl+Enter sends as answer)">${esc(qDrafts[q.id] || '')}</textarea>
-          <div class="q-actions"><button class="link" data-qdismiss="${esc(q.id)}">Dismiss</button><span class="spacer"></span><button class="btn sm primary" data-qsend="${esc(q.id)}">Send answer</button></div></div>`;
+          <div class="q-actions"><button class="link" data-qdismiss="${esc(q.id)}" title="Tell the agent you won't answer this">Dismiss</button><button class="link${confirmQDelete === q.id ? ' danger-link' : ''}" data-qdelete="${esc(q.id)}" title="Remove without telling the agent (e.g. a duplicate)">${confirmQDelete === q.id ? 'Click again to delete' : 'Delete'}</button><span class="spacer"></span><button class="btn sm primary" data-qsend="${esc(q.id)}">Send answer</button></div></div>`;
       }
       const d = q.decision || (q.dismissed ? 'dismissed' : 'answer');
       if (q.delivered) {
@@ -665,7 +667,9 @@
         <div class="q-text">${esc(q.question)}</div>${rec}
         <div class="q-answer${q.dismissed ? ' dismissed' : ''}"><span class="badge ${esc(d === 'option' ? 'opt-' + ((((q.options || []).map(optOf).find((o) => o.label === q.chosenOption)) || {}).type || 'neutral') : d)}">${esc(DECISION[d] || 'Answered')}</span>${shown ? ` ${esc(shown)}` : ''}</div>
         <div class="q-status waiting"><span class="spin"></span><div>Answer saved. Waiting for ${esc(q.askedBy || 'the agent')} to pick it up<small>An agent that is waiting gets it right away; otherwise it arrives with the agent's next turn or your next message to it.</small></div></div>
-        <div class="q-actions"><button class="link" data-qreopen="${esc(q.id)}" title="Change the answer before the agent takes it">Change answer</button></div></div>`;
+        <div class="q-actions"><button class="link" data-qreopen="${esc(q.id)}" title="Change the answer before the agent takes it">Change answer</button><span class="spacer"></span>
+          <button class="link" data-qreceived="${esc(q.id)}" title="The agent already has this answer (e.g. it said so in the chat)">Mark as received</button>
+          <button class="link" data-qhide="${esc(q.id)}" title="Remove from the board">Remove</button></div></div>`;
     };
     body.innerHTML = (open.length ? open.map(qHtml).join('') : '<div class="empty">No open questions</div>') +
       (answered.length ? `<div class="section-label">Answered · waiting for the agent</div>${answered.map(qHtml).join('')}` : '') +
@@ -747,6 +751,11 @@
     }
     else if (d.qsend) sendAnswer(d.qsend, 'answer', draftOf(d.qsend));
     else if (d.qreopen) op('reopen', { id: d.qreopen }).catch(alertError);
+    else if (d.qreceived) op('markDelivered', { id: d.qreceived }).then(() => toast(`${d.qreceived} marked as received`, 'ok')).catch(alertError);
+    else if (d.qdelete) {
+      if (confirmQDelete === d.qdelete) { confirmQDelete = null; op('hideQuestion', { id: d.qdelete }).then(() => toast(`${d.qdelete} deleted`, 'ok')).catch(alertError); }
+      else { confirmQDelete = d.qdelete; renderQuestions(); setTimeout(() => { if (confirmQDelete === d.qdelete) { confirmQDelete = null; renderQuestions(); } }, 3000); }
+    }
     else if (d.qdismiss) op('dismiss', { id: d.qdismiss }).catch(alertError);
     else if (d.qhide) op('hideQuestion', { id: d.qhide }).catch(alertError);
   });
