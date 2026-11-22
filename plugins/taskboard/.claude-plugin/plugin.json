@@ -1,0 +1,22 @@
+{
+  "name": "taskboard",
+  "version": "1.6.0",
+  "description": "Live dark-mode kanban board for big implementations. Agents plan, split, claim and finish tasks; you watch and clear finished cards. Runs only while Claude Code sessions run.",
+  "author": {
+    "name": "Ragin"
+  },
+  "keywords": [
+    "kanban",
+    "tasks",
+    "dashboard",
+    "agents"
+  ],
+  "mcpServers": {
+    "taskboard": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/server/mcp.js"
+      ]
+    }
+  }
+}

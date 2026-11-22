@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Taskboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23151b28'/%3E%3Crect x='6' y='7' width='5' height='18' rx='2' fill='%237c8cff'/%3E%3Crect x='13.5' y='7' width='5' height='12' rx='2' fill='%23f5b84b'/%3E%3Crect x='21' y='7' width='5' height='8' rx='2' fill='%233ddc97'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0a0d13;
+    --bg-2: #0f131c;
+    --panel: #141a26;
+    --card: #1a2130;
+    --card-hover: #1f2738;
+    --line: #253046;
+    --line-soft: #1c2434;
+    --text: #e6eaf2;
+    --muted: #8e99b0;
+    --faint: #5d6880;
+    --todo: #7c8cff;
+    --doing: #f5b84b;
+    --blocked: #ff6b81;
+    --done: #3ddc97;
+    --radius: 12px;
+    --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: radial-gradient(1200px 600px at 10% -10%, #18203a 0%, transparent 60%), var(--bg);
+    color: var(--text); font: 14px/1.45 Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+
+  /* ---------- header ---------- */
+  header {
+    display: flex; align-items: center; gap: 14px; padding: 14px 22px;
+    border-bottom: 1px solid var(--line-soft); background: rgba(10, 13, 19, .7); backdrop-filter: blur(8px);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; font-size: 16px; margin-right: 8px; }
+  .brand-mark { display: flex; gap: 3px; align-items: flex-end; height: 20px; }
+  .brand-mark i { width: 5px; border-radius: 2px; display: block; }
+  .brand-mark i:nth-child(1) { height: 20px; background: var(--todo); }
+  .brand-mark i:nth-child(2) { height: 14px; background: var(--doing); }
+  .brand-mark i:nth-child(3) { height: 9px; background: var(--done); }
+  .field {
+    display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 0 10px; height: 36px;
+  }
+  .field label { color: var(--faint); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
+  .field select, .field input { background: transparent; border: 0; outline: none; height: 34px; }
+  .field select { min-width: 180px; cursor: pointer; }
+  .field select option { background: var(--panel); }
+  .field input { width: 170px; }
+  header > * { flex-shrink: 0; white-space: nowrap; }
+  header .spacer { flex-shrink: 1; min-width: 0; }
+  .field:focus-within { border-color: #3a4766; }
+  .spacer { flex: 1; }
+  .stats { display: flex; gap: 14px; color: var(--muted); font-size: 13px; }
+  .stats b { color: var(--text); font-weight: 600; }
+  .conn { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; cursor: default; }
+  .conn span { display: none; }
+  .conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--blocked); box-shadow: 0 0 0 3px rgba(255,107,129,.15); }
+  .conn.live i { background: var(--done); box-shadow: 0 0 0 3px rgba(61,220,151,.15); }
+  .btn {
+    height: 34px; padding: 0 14px; border-radius: 9px; border: 0; cursor: pointer; font-weight: 600; font-size: 13px;
+    background: #2a3550; color: var(--text); transition: filter .15s, transform .05s;
+  }
+  .btn:hover { filter: brightness(1.15); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--todo); color: #0b0e1a; }
+  .btn.done { background: var(--done); color: #06170f; }
+  .btn.danger { background: var(--blocked); color: #1d0609; }
+  .btn:disabled { opacity: .35; cursor: default; filter: none; }
+  .btn.sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+
+  /* ---------- board ---------- */
+  main { flex: 1; display: grid; grid-template-columns: repeat(4, minmax(270px, 1fr)); gap: 16px; padding: 18px 22px 22px; overflow: auto; }
+  .col { display: flex; flex-direction: column; min-height: 0; background: rgba(20, 26, 38, .6); border: 1px solid var(--line-soft); border-radius: 16px; }
+  .col-head { display: flex; align-items: center; gap: 10px; padding: 14px 14px 10px; }
+  .col-head h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .9px; font-weight: 700; }
+  .col-head .dot { width: 10px; height: 10px; border-radius: 3px; }
+  .col-head .count { color: var(--muted); font-size: 12px; background: var(--bg-2); border: 1px solid var(--line); padding: 1px 8px; border-radius: 99px; }
+  .col-head .actions { margin-left: auto; display: flex; gap: 6px; }
+  .col[data-status="todo"] .dot { background: var(--todo); }
+  .col[data-status="in_progress"] .dot { background: var(--doing); }
+  .col[data-status="blocked"] .dot { background: var(--blocked); }
+  .col[data-status="done"] .dot { background: var(--done); }
+  .col-body { flex: 1; overflow-y: auto; padding: 4px 10px 12px; display: flex; flex-direction: column; gap: 10px; min-height: 80px; border-radius: 0 0 16px 16px; transition: background .15s; }
+  .col.drop .col-body { background: rgba(124, 140, 255, .07); outline: 2px dashed #34406a; outline-offset: -6px; }
+  .empty { color: var(--faint); text-align: center; padding: 26px 8px; font-size: 13px; }
+
+  .add-row { display: flex; gap: 6px; padding: 0 10px 8px; }
+  .add-row input { flex: 1; height: 34px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg-2); outline: none; }
+  .add-row input:focus { border-color: var(--todo); }
+
+  /* ---------- cards ---------- */
+  .card {
+    position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 11px 12px 11px 15px; cursor: grab; transition: background .15s, border-color .15s, opacity .15s;
+  }
+  .card::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent, var(--todo)); }
+  .card:hover { background: var(--card-hover); border-color: #33405c; }
+  .card.dragging { opacity: .4; }
+  .card[data-status="in_progress"] { --accent: var(--doing); }
+  .card[data-status="blocked"] { --accent: var(--blocked); }
+  .card[data-status="done"] { --accent: var(--done); }
+  .card.checked { border-color: var(--done); background: #17262a; }
+  .card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .tid { white-space: nowrap; flex: none; font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--bg-2); border: 1px solid var(--line); padding: 0 6px; border-radius: 6px; }
+  .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 0 6px; border-radius: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+  .tag.mirror { color: #a8b3ff; border-color: #36407a; }
+  .card-top .x { margin-left: auto; opacity: 0; border: 0; background: transparent; color: var(--faint); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px; border-radius: 6px; }
+  .card:hover .x { opacity: 1; }
+  .card .x:hover { color: var(--blocked); background: rgba(255,107,129,.1); }
+  .card .x.confirm { opacity: 1; color: #1d0609; background: var(--blocked); font-size: 11px; font-weight: 700; }
+  .title { font-weight: 600; font-size: 14px; word-wrap: break-word; }
+  .card[data-status="done"] .title { color: #b9c3d6; }
+  .parent-ref { font-size: 12px; color: var(--faint); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .desc { color: var(--muted); font-size: 13px; margin-top: 5px; white-space: pre-wrap; word-wrap: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+  .desc.open { -webkit-line-clamp: unset; display: block; }
+  .note { margin-top: 7px; font-size: 12px; color: #c9b27a; background: rgba(245,184,75,.07); border: 1px solid rgba(245,184,75,.18); padding: 5px 8px; border-radius: 8px; white-space: pre-wrap; }
+  .card[data-status="blocked"] .note { color: #ffb3bf; background: rgba(255,107,129,.08); border-color: rgba(255,107,129,.25); }
+  .card[data-status="done"] .note { color: #9fe3c4; background: rgba(61,220,151,.06); border-color: rgba(61,220,151,.18); }
+  .card-foot { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+  .who { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; }
+  .avatar { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 800; color: #0b0e14; }
+  .working { font-size: 11px; color: var(--doing); display: flex; align-items: center; gap: 5px; }
+  .working i { width: 6px; height: 6px; border-radius: 50%; background: var(--doing); animation: pulse 1.4s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+  .progress { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+  .bar { flex: 1; height: 5px; background: var(--bg-2); border-radius: 99px; overflow: hidden; border: 1px solid var(--line-soft); }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--done), #7af0c0); border-radius: 99px; }
+  .time { margin-left: auto; font-size: 11px; color: var(--faint); white-space: nowrap; }
+  .check { appearance: none; width: 18px; height: 18px; border-radius: 6px; border: 2px solid #3d4a66; background: var(--bg-2); cursor: pointer; display: grid; place-items: center; flex: none; }
+  .check:checked { background: var(--done); border-color: var(--done); }
+  .check:checked::after { content: ""; width: 5px; height: 9px; border: solid #06170f; border-width: 0 2px 2px 0; transform: rotate(45deg) translate(-1px, -1px); }
+
+  /* ---------- archive drawer ---------- */
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; background: var(--panel); border-left: 1px solid var(--line); transform: translateX(100%); transition: transform .2s; display: flex; flex-direction: column; z-index: 10; box-shadow: -20px 0 40px rgba(0,0,0,.4); }
+  .drawer.open { transform: none; }
+  .drawer-head { display: flex; align-items: center; padding: 16px; border-bottom: 1px solid var(--line-soft); gap: 10px; }
+  .drawer-head h3 { margin: 0; font-size: 14px; }
+  .drawer-body { overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .arch { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .arch .t { flex: 1; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #b9c3d6; }
+
+  /* ---------- usage panel ---------- */
+  .usage { display: none; padding: 16px 22px 0; }
+  .usage.open { display: block; }
+  .usage-grid { display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr)) minmax(300px, 1.6fr); grid-template-rows: auto auto; gap: 12px; }
+  .usage-grid .sessions { grid-column: 1 / span 3; }
+  .usage-grid .models { grid-column: 4 / span 2; }
+  .tile { background: rgba(20, 26, 38, .75); border: 1px solid var(--line-soft); border-radius: 14px; padding: 12px 14px; min-width: 0; }
+  .tile .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .7px; font-weight: 600; display: flex; gap: 6px; align-items: center; }
+  .tile .k em { font-style: normal; text-transform: none; letter-spacing: 0; color: var(--faint); font-weight: 500; }
+  .tile .v { font-size: 24px; font-weight: 700; margin-top: 4px; letter-spacing: -.3px; font-variant-numeric: tabular-nums; }
+  .tile .s { color: var(--muted); font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .meter { height: 5px; background: var(--bg-2); border-radius: 99px; margin-top: 8px; overflow: hidden; border: 1px solid var(--line-soft); }
+  .tile .meter i { display: block; height: 100%; background: var(--doing); border-radius: 99px; }
+  .chart-tile { display: flex; flex-direction: column; }
+  .bars { position: relative; flex: 1; min-height: 120px; display: flex; align-items: flex-end; gap: 2px; margin-top: 10px; border-bottom: 1px solid var(--line); padding-top: 14px; }
+  .bars .ymax { position: absolute; top: 0; left: 0; font-size: 10px; color: var(--faint); }
+  .bars .grid { position: absolute; left: 0; right: 0; top: 14px; border-top: 1px dashed var(--line-soft); }
+  .bar-col { flex: 1; height: 100%; display: flex; align-items: flex-end; cursor: default; position: relative; }
+  .bar-col i { display: block; width: 100%; max-width: 26px; margin: 0 auto; background: var(--todo); border-radius: 4px 4px 0 0; min-height: 0; opacity: .85; }
+  .bar-col:hover i, .bar-col.today i { opacity: 1; }
+  .bar-col.today i { background: #a3afff; }
+  .xlabels { display: flex; gap: 2px; margin-top: 4px; }
+  .xlabels span { flex: 1; text-align: center; font-size: 10px; color: var(--faint); }
+  .tip { position: fixed; pointer-events: none; z-index: 30; background: #0b0f17; border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4); display: none; white-space: nowrap; }
+  .tip b { font-variant-numeric: tabular-nums; }
+  .list-tile table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .list-tile td, .list-tile th { padding: 4px 6px; text-align: left; white-space: nowrap; }
+  .list-tile th { color: var(--faint); font-weight: 600; font-size: 11px; }
+  .list-tile td.num, .list-tile th.num { text-align: right; }
+  .list-tile tr + tr td { border-top: 1px solid var(--line-soft); }
+  .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--done); margin-right: 6px; }
+  .usage-note { color: var(--faint); font-size: 11px; margin-top: 8px; }
+  .usage-grid .chart-tile { grid-column: 6; grid-row: 1 / span 2; }
+
+  /* ---------- plan limits ---------- */
+  .limits { display: flex; align-items: center; gap: 14px; }
+  .lim { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; cursor: default; }
+  .lim-k { font-weight: 700; color: var(--text); font-size: 11px; letter-spacing: .4px; }
+  .lim-bar { position: relative; width: 74px; height: 7px; border-radius: 99px; background: var(--bg-2); border: 1px solid var(--line); overflow: visible; }
+  .lim-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; background: var(--lim, var(--todo)); }
+  .lim-bar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); opacity: .55; border-radius: 1px; }
+  .lim-v { color: var(--text); font-weight: 600; }
+  .lim-v small { color: var(--muted); font-weight: 500; font-size: 11px; }
+  .lim-t { color: var(--faint); }
+  .lim.warn { --lim: var(--doing); } .lim.crit { --lim: var(--blocked); }
+  .lim.crit .lim-v { color: var(--blocked); } .lim.warn .lim-v { color: var(--doing); }
+  .lim.stale { opacity: .55; }
+  .lim-setup { font-size: 12px; color: var(--faint); border: 1px dashed var(--line); padding: 3px 8px; border-radius: 8px; cursor: help; }
+  .gauge { position: relative; height: 8px; border-radius: 99px; background: var(--bg-2); border: 1px solid var(--line-soft); margin-top: 9px; }
+  .gauge i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; background: var(--lim, var(--todo)); }
+  .gauge b { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text); opacity: .6; border-radius: 1px; }
+  .tile.warn { --lim: var(--doing); } .tile.crit { --lim: var(--blocked); }
+  .tile .pace { font-size: 12px; margin-top: 6px; color: var(--muted); }
+  .tile .pace.bad { color: var(--blocked); } .tile .pace.mid { color: var(--doing); }
+
+  .src-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .seg { display: inline-flex; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+  .seg button { border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 7px; cursor: pointer; }
+  .seg button.on { background: var(--todo); color: #0b0e1a; }
+  .src-state { display: inline-flex; align-items: center; gap: 6px; }
+  .src-state i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .src-state.ok i { background: var(--done); } .src-state.err i { background: var(--blocked); } .src-state.err { color: #ffb3bf; }
+  .lim, .lim-setup { cursor: pointer; }
+
+  /* ---------- questions ---------- */
+  .btn.ask { background: #2a3550; }
+  .btn.ask.has { background: var(--doing); color: #1c1203; animation: glow 2s infinite; }
+  @keyframes glow { 0%,100% { box-shadow: 0 0 0 0 rgba(245,184,75,.45); } 50% { box-shadow: 0 0 0 6px rgba(245,184,75,0); } }
+  .q { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .q.open { border-color: rgba(245,184,75,.5); }
+  .q-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; color: var(--muted); }
+  .q-top .tid { color: var(--doing); }
+  .q-text { font-weight: 600; white-space: pre-wrap; }
+  .q-details { color: var(--muted); font-size: 13px; margin-top: 6px; white-space: pre-wrap; }
+  .q-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .q-opts .btn { background: #2f3b5c; }
+  .q textarea { width: 100%; margin-top: 10px; min-height: 64px; resize: vertical; border-radius: 9px; border: 1px solid var(--line); background: var(--bg-2); padding: 8px 10px; outline: none; }
+  .q textarea:focus { border-color: var(--doing); }
+  .q-actions { display: flex; gap: 6px; margin-top: 8px; justify-content: flex-end; }
+  .q-answer { margin-top: 8px; font-size: 13px; color: #9fe3c4; background: rgba(61,220,151,.06); border: 1px solid rgba(61,220,151,.18); padding: 6px 9px; border-radius: 8px; white-space: pre-wrap; }
+  .q-answer.dismissed { color: var(--muted); background: var(--bg-2); border-color: var(--line); }
+  .q-state { font-size: 11px; margin-left: auto; }
+  .qchip { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 12px; font-weight: 600; color: #1c1203; background: var(--doing); border: 0; border-radius: 8px; padding: 3px 8px; cursor: pointer; }
+  #qdrawer { width: var(--qw, min(760px, 55vw)); max-width: 96vw; }
+  #qdrawer.wide { width: 92vw; }
+  .qresize { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 2; }
+  .qresize:hover, .qresize.on { background: linear-gradient(90deg, transparent 3px, var(--todo) 3px, var(--todo) 5px, transparent 5px); }
+  #qdrawer .drawer-body { padding: 16px 18px; gap: 12px; }
+  #qdrawer.wide .drawer-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); align-items: start; }
+  #qdrawer.wide .section-label { grid-column: 1 / -1; }
+  .q { padding: 16px; }
+  .q-text { font-size: 15px; line-height: 1.4; }
+  .q-details { font-size: 13.5px; line-height: 1.5; }
+  .q textarea { min-height: 90px; }
+  .q-opts .btn { height: auto; min-height: 32px; padding: 6px 12px; white-space: normal; text-align: left; line-height: 1.3; }
+  .btn.opt-accept { background: var(--done); color: #06170f; }
+  .btn.opt-reject { background: var(--blocked); color: #1d0609; }
+  .btn.opt-neutral { background: #3d7bfd; color: #fff; }
+  .btn.rec { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px #ffd166; }
+  .star { font-size: 10px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; background: #ffd166; color: #2a1d00; padding: 1px 6px; border-radius: 5px; margin-left: 6px; vertical-align: 1px; }
+  .q-optcards { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .q-optcard { display: block; width: 100%; text-align: left; border: 1px solid var(--line); border-left: 4px solid var(--oc); background: var(--card-hover); border-radius: 10px; padding: 10px 12px; cursor: pointer; color: var(--text); transition: background .15s, transform .05s; }
+  .q-optcard:hover { background: color-mix(in srgb, var(--oc) 14%, var(--card)); }
+  .q-optcard:active { transform: translateY(1px); }
+  .q-optcard.rec { border-color: #ffd166; border-left-color: var(--oc); box-shadow: 0 0 0 1px #ffd166 inset; }
+  .q-optcard .ol { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+  .q-optcard .ol i { width: 10px; height: 10px; border-radius: 3px; background: var(--oc); flex: none; }
+  .q-optcard .od { color: var(--muted); font-size: 13px; margin-top: 4px; white-space: pre-wrap; line-height: 1.45; }
+  .q-optcard.t-accept { --oc: var(--done); } .q-optcard.t-reject { --oc: var(--blocked); } .q-optcard.t-neutral { --oc: #3d7bfd; }
+  .q-legend { display: flex; gap: 12px; font-size: 11px; color: var(--faint); margin: 2px 2px 0; }
+  .q-legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; background: var(--c); }
+  .spin { display: inline-block; width: 13px; height: 13px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: rot .8s linear infinite; vertical-align: -2px; flex: none; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  .q.sending { border-color: var(--todo); }
+  .q.waiting { border-color: rgba(61,220,151,.45); background: #17252a; }
+  .q.failed { border-color: var(--blocked); }
+  .q-status { display: flex; align-items: center; gap: 9px; margin-top: 10px; font-size: 13px; padding: 9px 11px; border-radius: 9px; }
+  .q-status.sending { color: #c3cbff; background: rgba(124,140,255,.1); border: 1px solid rgba(124,140,255,.3); }
+  .q-status.waiting { color: #9fe3c4; background: rgba(61,220,151,.07); border: 1px solid rgba(61,220,151,.25); }
+  .q-status.failed { color: #ffb3bf; background: rgba(255,107,129,.08); border: 1px solid rgba(255,107,129,.35); }
+  .q-status small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .q.compact .q-text { font-size: 14px; }
+  .hist-toggle { background: transparent; border: 0; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; text-align: left; padding: 8px 2px 0; text-transform: uppercase; letter-spacing: .7px; }
+  .hist-toggle:hover { color: var(--text); }
+  .q.done-item { opacity: .75; padding: 10px 14px; }
+  .toasts { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 50; pointer-events: none; }
+  .toast { pointer-events: auto; min-width: 260px; max-width: 460px; background: #0f1520; border: 1px solid var(--line); border-left: 4px solid var(--todo); border-radius: 10px; padding: 10px 14px; font-size: 13px; box-shadow: 0 12px 30px rgba(0,0,0,.45); animation: tin .2s ease-out; }
+  .toast.ok { border-left-color: var(--done); } .toast.err { border-left-color: var(--blocked); } .toast.info { border-left-color: var(--doing); }
+  .toast.out { opacity: 0; transform: translateY(6px); transition: all .25s; }
+  @keyframes tin { from { opacity: 0; transform: translateY(8px); } }
+  .banner { display: none; align-items: center; gap: 10px; padding: 9px 22px; background: rgba(245,184,75,.12); border-bottom: 1px solid rgba(245,184,75,.35); color: #f5d38f; font-size: 13px; }
+  .banner.show { display: flex; }
+  .q-rec { margin-top: 10px; background: rgba(124,140,255,.08); border: 1px solid rgba(124,140,255,.28); border-radius: 9px; padding: 8px 10px; font-size: 13px; white-space: pre-wrap; }
+  .q-rec b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: #a8b3ff; margin-bottom: 3px; }
+  .q-decide { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .q-decide .btn { flex: 1; min-width: 90px; }
+  .q-actions .spacer { flex: 1; }
+  .q-actions .link { background: transparent; border: 0; color: var(--faint); font-size: 12px; cursor: pointer; padding: 0 4px; }
+  .q-actions .link:hover { color: var(--text); }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; }
+  .badge.accept { background: var(--done); color: #06170f; }
+  .badge.reject { background: var(--blocked); color: #1d0609; }
+  .badge.option, .badge.answer, .badge.opt-neutral { background: #3d7bfd; color: #fff; }
+  .badge.opt-accept { background: var(--done); color: #06170f; } .badge.opt-reject { background: var(--blocked); color: #1d0609; }
+  .badge.dismissed { background: var(--bg-2); color: var(--muted); border: 1px solid var(--line); }
+  .xid { font-family: var(--mono); font-size: 11px; color: #a8b3ff; border: 1px solid #36407a; padding: 0 6px; border-radius: 6px; }
+  .section-label { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .7px; margin: 6px 2px 0; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #232c40; border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  @media (max-width: 1680px) { .stats { display: none; } }
+  @media (max-width: 1480px) { .field label { display: none; } }
+  @media (max-width: 1280px) { .lim-t { display: none; } }
+  @media (max-width: 1100px) { .limits .lim-t { display: none; } .stats { display: none; } .field input { width: 140px; } .usage-grid { grid-template-columns: repeat(2, 1fr); } .usage-grid .chart-tile, .usage-grid .sessions, .usage-grid .models { grid-column: 1 / -1; grid-row: auto; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="brand-mark"><i></i><i></i><i></i></span>Taskboard</div>
+  <div class="field"><label for="project">Project</label><select id="project"></select></div>
+  <div class="field"><label for="search">Find</label><input id="search" placeholder="title, assignee, T-12…" autocomplete="off"></div>
+  <div class="spacer"></div>
+  <div class="limits" id="limits"></div>
+  <div class="stats" id="stats"></div>
+  <button class="btn" id="usageBtn">Usage</button>
+  <button class="btn ask" id="questionsBtn">Questions</button>
+  <button class="btn" id="archiveBtn">Archive</button>
+  <div class="conn" id="conn"><i></i><span>connecting…</span></div>
+</header>
+
+<div class="banner" id="banner"></div>
+<section class="usage" id="usage"></section>
+<div class="toasts" id="toasts"></div>
+<main id="board"></main>
+<div class="tip" id="tip"></div>
+
+<aside class="drawer" id="qdrawer">
+  <div class="qresize" id="qresize" title="Drag to resize"></div>
+  <div class="drawer-head"><h3>Questions from agents</h3>
+    <div class="q-legend"><span style="--c:var(--done)">accept</span><span style="--c:#3d7bfd">in between</span><span style="--c:var(--blocked)">reject</span><span style="--c:#ffd166">recommended</span></div>
+    <div class="spacer"></div><button class="btn sm" id="wideQ" title="Toggle wide view">Wide</button><button class="btn sm" id="closeQ">Close</button></div>
+  <div class="drawer-body" id="qbody"></div>
+</aside>
+
+<aside class="drawer" id="drawer">
+  <div class="drawer-head"><h3>Removed from board</h3><div class="spacer"></div><button class="btn sm" id="closeDrawer">Close</button></div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
+<script>
+(() => {
+  'use strict';
+  const COLUMNS = [
+    { status: 'todo', label: 'To Do' },
+    { status: 'in_progress', label: 'In Progress' },
+    { status: 'blocked', label: 'Blocked' },
+    { status: 'done', label: 'Finished' },
+  ];
+  const AVATAR_COLORS = ['#7c8cff', '#f5b84b', '#3ddc97', '#ff8fa3', '#5cc8ff', '#c792ea', '#ffcb6b', '#89ddff'];
+
+  let state = { projects: {}, tasks: [], questions: [] };
+  let usage = null;
+  const qDrafts = {};
+  const UI_VERSION = '1.6.0';
+  const pending = {}; // question id -> { label, error, args }
+  let showHistory = false;
+  let prevQuestions = null;
+  let dragId = null;
+  let renderPending = false;
+  const checked = new Set();
+  const openDesc = new Set();
+  let confirmDelete = null;
+  let addOpen = false;
+  let focusAdd = false;
+
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('taskboard.' + k); return v == null ? d : v; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('taskboard.' + k, v); } catch { /* ignore */ } },
+  };
+  const urlProject = new URLSearchParams(location.search).get('project');
+  let projectFilter = urlProject || store.get('project', '__all');
+  let search = '';
+
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const num = (id) => Number(String(id).slice(2));
+
+  function colorFor(name) {
+    let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
+  }
+  function initials(name) {
+    const parts = name.trim().split(/\s+/);
+    return ((parts[0] || '')[0] + ((parts[1] || '')[0] || '')).toUpperCase();
+  }
+  function ago(iso) {
+    if (!iso) return '';
+    const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    return Math.floor(s / 86400) + 'd ago';
+  }
+
+  async function op(name, args) {
+    const r = await fetch('/api/op', { method: 'POST', headers: { 'content-type': 'application/json', 'x-taskboard': '1' }, body: JSON.stringify({ op: name, args }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    return j.result;
+  }
+
+  // ---------------------------------------------------------------- data views
+  function visibleTasks() {
+    const q = search.trim().toLowerCase();
+    return state.tasks.filter((t) => {
+      if (t.archived) return false;
+      if (projectFilter !== '__all' && t.project !== projectFilter) return false;
+      if (!q) return true;
+      return [t.id, t.title, t.description, t.assignee, t.note].some((v) => v && String(v).toLowerCase().includes(q));
+    });
+  }
+  const byId = () => Object.fromEntries(state.tasks.map((t) => [t.id, t]));
+
+  function sortFor(status, list) {
+    if (status === 'done') return list.sort((a, b) => (b.finishedAt || '').localeCompare(a.finishedAt || ''));
+    if (status === 'todo') return list.sort((a, b) => num(a.id) - num(b.id));
+    return list.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  }
+
+  function openQuestionsFor(taskId) {
+    return (state.questions || []).filter((q) => q.taskId === taskId && q.status === 'open');
+  }
+
+  // ---------------------------------------------------------------- usage
+  const money = (v) => '$' + (v || 0).toFixed((v || 0) >= 100 ? 0 : 2);
+  const tok = (v) => (v >= 1e9 ? (v / 1e9).toFixed(1) + 'B' : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'k' : String(v || 0));
+  const hm = (ms) => { const m = Math.max(0, Math.round(ms / 60000)); return (m >= 60 ? Math.floor(m / 60) + 'h ' : '') + (m % 60) + 'm'; };
+  const time = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const shortModel = (m) => String(m || '').replace(/^claude-/, '').replace(/-\d{8}$/, '');
+
+  const WINDOW_MS = { five_hour: 5 * 3600000, seven_day: 7 * 86400000 };
+  const LIM_LABEL = { five_hour: '5h', seven_day: '7d', spend_limit: '$' };
+  function limitInfo(key) {
+    const L = state.limits;
+    const w = L && L[key];
+    if (!w) return null;
+    const now = Date.now();
+    const reset = w.resetsAt && w.resetsAt <= now;
+    const used = reset ? 0 : w.used;
+    const win = WINDOW_MS[key];
+    let elapsed = null, hitAt = null;
+    if (win && w.resetsAt && !reset) {
+      const start = w.resetsAt - win;
+      elapsed = Math.min(100, Math.max(0, ((now - start) / win) * 100));
+      const rate = used / Math.max(1, now - start); // % per ms
+      if (rate > 0) { const t = now + (100 - used) / rate; if (t < w.resetsAt) hitAt = t; }
+    }
+    const level = used >= 90 ? 'crit' : used >= 75 ? 'warn' : '';
+    return { ...w, key, used, left: Math.max(0, 100 - used), reset, elapsed, hitAt, level, stale: now - (L.updatedAt || 0) > (L.source === 'api' ? 10 : 30) * 60000 };
+  }
+  function until(ms) {
+    const m = Math.max(0, Math.round((ms - Date.now()) / 60000));
+    if (m >= 1440) return Math.floor(m / 1440) + 'd ' + Math.floor((m % 1440) / 60) + 'h';
+    return hm(ms - Date.now());
+  }
+  function resetText(x) {
+    if (!x.resetsAt) return '';
+    const d = new Date(x.resetsAt);
+    const sameDay = d.toDateString() === new Date().toDateString();
+    return (sameDay ? '' : d.toLocaleDateString([], { weekday: 'short' }) + ' ') + time(x.resetsAt);
+  }
+
+  function renderLimits() {
+    const el = $('#limits');
+    const keys = ['five_hour', 'seven_day'].concat(state.limits && state.limits.spend_limit ? ['spend_limit'] : []);
+    const infos = keys.map(limitInfo).filter(Boolean);
+    if (!infos.length) {
+      const br = state.bridge;
+      const seen = br && Date.now() - br.lastSeen < 24 * 3600000;
+      const ls = state.limitsSources || {};
+      if (ls.source !== 'statusline' && ls.source && ls.apiStatus && !ls.apiStatus.ok) {
+        el.innerHTML = `<span class="lim-setup" title="Usage API: ${esc(ls.apiStatus.error)}">limits: API error</span>`;
+        return;
+      }
+      if (ls.source === 'api') {
+        el.innerHTML = `<span class="lim-setup" title="Waiting for the first answer from the usage API (macOS may ask for Keychain access).">limits: loading…</span>`;
+        return;
+      }
+      el.innerHTML = seen
+        ? `<span class="lim-setup" title="The status line bridge is running (last seen ${esc(ago(new Date(br.lastSeen).toISOString()))}), but Claude Code sends no plan limits. They are only sent when you are logged in with a Pro/Max subscription (not an API key) and after the first response in a session. Check ~/.claude/taskboard/.statusline-debug.json.">limits: no data from Claude Code</span>`
+        : `<span class="lim-setup" title="The status line bridge has not reported yet. Run /taskboard-limits once, then send any message in a Claude Code session. If you already did: check that statusLine in ~/.claude/settings.json points to ~/.claude/taskboard/statusline.js.">limits: not connected</span>`;
+      return;
+    }
+    const asOf = (state.limits.updatedAt ? `updated ${ago(new Date(state.limits.updatedAt).toISOString())}` : '') + ` via ${state.limits.source === 'api' ? 'usage API' : 'status line'}`;
+    el.innerHTML = infos.map((x) => {
+      const tip = `${x.key === 'five_hour' ? '5-hour window' : x.key === 'seven_day' ? 'Weekly window' : 'Spend limit'}: ${Math.round(x.used)}% used, ${Math.round(x.left)}% left` +
+        (x.reset ? ' (window has reset)' : x.resetsAt ? ` · resets ${resetText(x)} (in ${until(x.resetsAt)})` : '') +
+        (x.elapsed != null ? ` · ${Math.round(x.elapsed)}% of the window elapsed (marker)` : '') +
+        (x.hitAt ? ` · at this pace the limit is reached around ${resetText({ resetsAt: x.hitAt })}` : '') + ` · ${asOf}`;
+      return `<div class="lim ${x.level}${x.stale ? ' stale' : ''}" title="${esc(tip)}"><span class="lim-k">${LIM_LABEL[x.key]}</span>
+        <span class="lim-bar"><i style="width:${Math.min(100, x.used)}%"></i>${x.elapsed != null ? `<b style="left:calc(${x.elapsed}% - 1px)"></b>` : ''}</span>
+        <span class="lim-v">${Math.round(x.left)}% <small>left</small></span>${x.resetsAt && !x.reset ? `<span class="lim-t">↻ ${esc(until(x.resetsAt))}</span>` : ''}</div>`;
+    }).join('');
+  }
+
+  function limitTile(key, title, blockCost) {
+    const x = limitInfo(key);
+    if (!x) {
+      return `<div class="tile"><div class="k">${title}</div><div class="v" style="color:var(--faint)">–</div>
+        <div class="s">No data yet</div><div class="s" style="color:var(--faint)">Pick a source above</div></div>`;
+    }
+    let pace = '';
+    if (x.hitAt) pace = `<div class="pace bad">Limit reached ~${esc(resetText({ resetsAt: x.hitAt }))} at this pace</div>`;
+    else if (x.elapsed != null && x.used > x.elapsed + 10) pace = `<div class="pace mid">Ahead of pace (${Math.round(x.elapsed)}% of time used)</div>`;
+    else if (x.elapsed != null) pace = `<div class="pace">On track (${Math.round(x.elapsed)}% of time used)</div>`;
+    return `<div class="tile ${x.level}"><div class="k">${title} <em>${x.stale ? 'stale · ' : ''}${state.limits.source === 'api' ? 'usage API' : 'status line'}</em></div>
+      <div class="v">${Math.round(x.left)}% left</div>
+      <div class="s">${Math.round(x.used)}% used</div>
+      <div class="s">${x.reset ? 'Window reset, waiting for update' : x.resetsAt ? `Resets ${esc(resetText(x))} · in ${esc(until(x.resetsAt))}` : ''}</div>
+      <div class="gauge"><i style="width:${Math.min(100, x.used)}%"></i>${x.elapsed != null ? `<b style="left:calc(${x.elapsed}% - 1px)"></b>` : ''}</div>
+      ${pace}${blockCost != null ? `<div class="s" style="margin-top:4px">${money(blockCost)} API-equiv. this block</div>` : ''}</div>`;
+  }
+
+  function renderUsage() {
+    const el = $('#usage');
+    const isOpen = store.get('usageOpen', '1') === '1';
+    el.classList.toggle('open', isOpen);
+    $('#usageBtn').textContent = isOpen ? 'Hide usage' : 'Usage';
+    if (!isOpen) return;
+    if (!usage || usage.pending) usage = { pending: true, hasData: false, scopes: {}, activeSessions: [], unknownModels: [] };
+
+    const scopeKey = projectFilter === '__all' ? '__all' : projectFilter;
+    const sc = usage.scopes[scopeKey];
+    const scopeName = projectFilter === '__all' ? 'all projects' : ((state.projects[projectFilter] || {}).name || 'project');
+    const empty = { cost: 0, tokens: 0, out: 0, messages: 0 };
+    const today = sc ? sc.today : empty, last7 = sc ? sc.last7 : empty, last30 = sc ? sc.last30 : empty;
+    const b = usage.block;
+    const now = Date.now();
+    const tile = (k, x, extra = '') => `<div class="tile"><div class="k">${k} <em>${esc(scopeName)}</em></div><div class="v">${money(x.cost)}</div><div class="s">${tok(x.tokens)} tokens · ${tok(x.out)} out${extra}</div></div>`;
+
+    const days = sc ? sc.days : [];
+    const max = Math.max(...days.map((d) => d.cost), 0.01);
+    const todayKey = days.length ? days[days.length - 1].day : '';
+    const bars = days.map((d, i) => `<div class="bar-col${d.day === todayKey ? ' today' : ''}" data-i="${i}"><i style="height:${d.cost > 0 ? Math.max(2, (d.cost / max) * 100) : 0}%"></i></div>`).join('');
+    const xl = days.map((d, i) => `<span>${i % 2 === (days.length - 1) % 2 ? esc(new Date(d.day + 'T12:00').toLocaleDateString([], { day: 'numeric', month: 'numeric' })) : ''}</span>`).join('');
+
+    let sessions = usage.activeSessions || [];
+    if (projectFilter !== '__all') sessions = sessions.filter((x) => x.project === projectFilter);
+    const sessRows = sessions.length ? sessions.slice(0, 6).map((x) => `<tr><td><span class="live-dot"></span>${esc(x.projectName || '?')}</td><td>${esc(shortModel(x.model))}</td><td class="num">${tok(x.context)}</td><td class="num">${money(x.cost)}</td><td class="num">${now - x.last < 60000 ? 'just now' : esc(hm(now - x.last)) + ' ago'}</td></tr>`).join('')
+      : '<tr><td colspan="5" style="color:var(--faint)">No session active in the last 15 minutes</td></tr>';
+    const models = sc ? sc.models.slice(0, 5) : [];
+    const modelRows = models.length ? models.map((m) => `<tr><td>${esc(shortModel(m.model))}</td><td class="num">${tok(m.tokens)}</td><td class="num">${money(m.cost)}</td></tr>`).join('') : '<tr><td style="color:var(--faint)">–</td></tr>';
+
+    const ls = state.limitsSources || { source: 'statusline' };
+    const srcAgo = (t) => (t ? ago(new Date(t).toISOString()) : 'no data yet');
+    const apiSt = ls.apiStatus;
+    const slState = `<span class="src-state ${ls.statusline && Date.now() - ls.statusline < 30 * 60000 ? 'ok' : ''}" title="Terminal sessions deliver limits through the status line bridge (/taskboard-limits).">
+      <i></i>Status line: ${esc(srcAgo(ls.statusline))}</span>`;
+    const apiState = ls.source === 'statusline' ? '' : `<span class="src-state ${apiSt ? (apiSt.ok ? 'ok' : 'err') : ''}" title="${esc(apiSt && !apiSt.ok ? apiSt.error : 'Polled every few minutes with your Claude Code login (unofficial endpoint).')}">
+      <i></i>Usage API: ${esc(apiSt && !apiSt.ok ? 'error: ' + apiSt.error : srcAgo(ls.api))}</span>`;
+    const srcBar = `<div class="src-bar"><span>Plan limits from</span>
+      <span class="seg" id="srcSeg">
+        <button data-src="statusline" class="${ls.source === 'statusline' ? 'on' : ''}" title="Only terminal sessions deliver data. No Keychain access.">Status line</button>
+        <button data-src="api" class="${ls.source === 'api' ? 'on' : ''}" title="Works for chat windows, desktop app and terminal. Reads your Claude Code login from the Keychain (macOS asks once). Unofficial endpoint.">Usage API</button>
+        <button data-src="both" class="${ls.source === 'both' ? 'on' : ''}" title="Use whichever source has the newest numbers.">Both</button>
+      </span>${slState}${apiState}</div>`;
+    el.innerHTML = srcBar + `<div class="usage-grid">
+        ${limitTile('five_hour', '5h limit', b ? b.cost : null)}
+        ${limitTile('seven_day', 'Weekly limit')}
+        ${tile('Today', today)}
+        ${tile('7 days', last7)}
+        ${tile('30 days', last30)}
+        <div class="tile chart-tile"><div class="k">Cost per day <em>last 14 days · ${esc(scopeName)}</em></div>
+          <div class="bars" id="bars"><span class="ymax">${money(max)}</span><span class="grid"></span>${bars}</div>
+          <div class="xlabels">${xl}</div></div>
+        <div class="tile list-tile sessions"><div class="k">Active sessions</div><table><tr><th>Project</th><th>Model</th><th class="num">Context</th><th class="num">Cost</th><th class="num">Last</th></tr>${sessRows}</table></div>
+        <div class="tile list-tile models"><div class="k">Models <em>30 days · ${esc(scopeName)}</em></div><table><tr><th>Model</th><th class="num">Tokens</th><th class="num">Cost</th></tr>${modelRows}</table></div>
+      </div>
+      <div class="usage-note">Cost is an API list-price estimate from local session logs${usage.unknownModels.length ? ' (no price for ' + esc(usage.unknownModels.map(shortModel).join(', ')) + ')' : ''}. Plan limits come from Claude Code's status line (/taskboard-limits); the white marker shows how much of the window's time has passed.</div>`;
+    usage._days = days;
+  }
+
+  $('#usage').addEventListener('mousemove', (e) => {
+    const col = e.target.closest && e.target.closest('.bar-col');
+    const tip = $('#tip');
+    if (!col || !usage || !usage._days) { tip.style.display = 'none'; return; }
+    const d = usage._days[Number(col.dataset.i)];
+    tip.innerHTML = `${esc(new Date(d.day + 'T12:00').toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }))}<br><b>${money(d.cost)}</b> · ${tok(d.tokens)} tokens · ${d.messages} msgs`;
+    tip.style.display = 'block';
+    tip.style.left = Math.min(window.innerWidth - tip.offsetWidth - 8, e.clientX + 12) + 'px';
+    tip.style.top = (e.clientY - tip.offsetHeight - 10) + 'px';
+  });
+  $('#usage').addEventListener('mouseleave', () => { $('#tip').style.display = 'none'; });
+  $('#usage').addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('[data-src]');
+    if (!b || b.classList.contains('on')) return;
+    if (b.dataset.src !== 'statusline' && !store.get('apiConsent', '')) {
+      if (!window.confirm('Use the usage API?\n\nThe board reads your Claude Code login from the macOS Keychain ("Claude Code-credentials"); macOS asks you once to allow it. The token is only sent to Anthropic\'s usage endpoint and never stored. The endpoint is unofficial and may change.')) return;
+      store.set('apiConsent', '1');
+    }
+    op('setLimitsSource', { source: b.dataset.src }).catch(alertError);
+  });
+  $('#limits').addEventListener('click', () => { store.set('usageOpen', '1'); renderUsage(); });
+  $('#usageBtn').addEventListener('click', () => { store.set('usageOpen', store.get('usageOpen', '1') === '1' ? '0' : '1'); renderUsage(); });
+
+  // ---------------------------------------------------------------- questions
+  function renderQuestions() {
+    const qs = (state.questions || []).filter((q) => !q.hidden && (projectFilter === '__all' || q.project === projectFilter));
+    const open = qs.filter((q) => q.status === 'open').sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const waiting = qs.filter((q) => q.status !== 'open' && !q.delivered).sort((a, b) => (b.answeredAt || '').localeCompare(a.answeredAt || ''));
+    const history = qs.filter((q) => q.status !== 'open' && q.delivered).sort((a, b) => (b.deliveredAt || b.answeredAt || '').localeCompare(a.deliveredAt || a.answeredAt || '')).slice(0, 30);
+    const answered = waiting;
+    const btn = $('#questionsBtn');
+    const toAnswer = open.filter((q) => !pending[q.id]).length;
+    btn.textContent = toAnswer ? `Questions (${toAnswer})` : waiting.length ? `Questions · ${waiting.length} sent` : 'Questions';
+    btn.classList.toggle('has', toAnswer > 0);
+    const allOpen = (state.questions || []).filter((q) => q.status === 'open' && !pending[q.id]).length;
+    document.title = (allOpen ? `(${allOpen}) ` : '') + 'Taskboard';
+
+    const body = $('#qbody');
+    const focused = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.qtext;
+    const optOf = (o) => (typeof o === 'string' ? { label: o, type: 'neutral', recommended: false } : o);
+    const renderOptions = (q) => {
+      const opts = (q.options || []).map(optOf);
+      if (!opts.length) return '';
+      const star = (o) => (o.recommended ? '<span class="star">★ Recommended</span>' : '');
+      if (opts.some((o) => o.description)) {
+        return `<div class="q-optcards">${opts.map((o, i) => `<button class="q-optcard t-${esc(o.type)}${o.recommended ? ' rec' : ''}" data-qopt="${esc(q.id)}" data-i="${i}">
+          <span class="ol"><i></i>${esc(o.label)}${star(o)}</span>${o.description ? `<span class="od">${esc(o.description)}</span>` : ''}</button>`).join('')}</div>`;
+      }
+      return `<div class="q-opts">${opts.map((o, i) => `<button class="btn sm opt-${esc(o.type)}${o.recommended ? ' rec' : ''}" data-qopt="${esc(q.id)}" data-i="${i}">${esc(o.label)}${star(o)}</button>`).join('')}</div>`;
+    };
+    const DECISION = { accept: 'Accepted', reject: 'Rejected', option: 'Chosen', answer: 'Answered', dismissed: 'Dismissed' };
+    const qHtml = (q) => {
+      const task = q.taskId && state.tasks.find((t) => t.id === q.taskId);
+      const meta = `<span class="tid">${esc(q.id)}</span>${q.externalId ? `<span class="xid" title="Id from the agent's list/file">${esc(q.externalId)}</span>` : ''}${q.askedBy ? `<span>${esc(q.askedBy)}</span>` : ''}${projectFilter === '__all' && state.projects[q.project] ? `<span class="tag">${esc(state.projects[q.project].name)}</span>` : ''}${task ? `<span class="tag" title="${esc(task.title)}">${esc(task.id)} · ${esc(task.title)}</span>` : ''}`;
+      const rec = q.recommendation ? `<div class="q-rec"><b>Recommendation</b>${esc(q.recommendation)}</div>` : '';
+      if (q.status === 'open' && pending[q.id]) {
+        const p = pending[q.id];
+        return p.error
+          ? `<div class="q failed"><div class="q-top">${meta}</div><div class="q-text">${esc(q.question)}</div>
+              <div class="q-status failed"><span>✕</span><div>Could not send “${esc(p.label)}”<small>${esc(p.error)}</small></div></div>
+              <div class="q-actions"><button class="link" data-qedit="${esc(q.id)}">Edit answer</button><span class="spacer"></span><button class="btn sm primary" data-qretry="${esc(q.id)}">Retry</button></div></div>`
+          : `<div class="q sending"><div class="q-top">${meta}</div><div class="q-text">${esc(q.question)}</div>
+              <div class="q-status sending"><span class="spin"></span><div>Sending “${esc(p.label)}”…</div></div></div>`;
+      }
+      if (q.status === 'open') {
+        const decide = q.recommendation
+          ? `<div class="q-decide"><button class="btn sm done" data-qdecide="accept" data-q="${esc(q.id)}">Accept</button><button class="btn sm danger" data-qdecide="reject" data-q="${esc(q.id)}">Reject</button></div>`
+          : '';
+        return `<div class="q open"><div class="q-top">${meta}<span class="q-state">${esc(ago(q.createdAt))}</span></div>
+          <div class="q-text">${esc(q.question)}</div>
+          ${q.details ? `<div class="q-details">${esc(q.details)}</div>` : ''}
+          ${rec}${decide}
+          ${renderOptions(q)}
+          <textarea data-qtext="${esc(q.id)}" placeholder="${q.recommendation ? 'Optional comment for Accept / Reject, or your own answer…' : 'Type an answer…'} (⌘/Ctrl+Enter sends as answer)">${esc(qDrafts[q.id] || '')}</textarea>
+          <div class="q-actions"><button class="link" data-qdismiss="${esc(q.id)}">Dismiss</button><span class="spacer"></span><button class="btn sm primary" data-qsend="${esc(q.id)}">Send answer</button></div></div>`;
+      }
+      const d = q.decision || (q.dismissed ? 'dismissed' : 'answer');
+      if (q.delivered) {
+        return `<div class="q done-item"><div class="q-top">${meta}<span class="q-state">✓ received ${esc(ago(q.deliveredAt || q.answeredAt))}</span></div>
+          <div class="q-text">${esc(q.question)}</div>
+          <div class="q-actions"><span class="badge ${esc(d === 'option' ? 'opt-' + ((((q.options || []).map(optOf).find((o) => o.label === q.chosenOption)) || {}).type || 'neutral') : d)}">${esc(DECISION[d] || 'Answered')}</span>
+          <span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d === 'option' ? q.chosenOption || '' : q.comment || '')}</span>
+          <span class="spacer"></span><button class="link" data-qreopen="${esc(q.id)}">Reopen</button><button class="link" data-qhide="${esc(q.id)}">Hide</button></div></div>`;
+      }
+      const st = 'answered';
+      const shown = d === 'option' ? (q.chosenOption || '') + (q.comment ? ` — ${q.comment}` : '') : (q.comment || (d === 'answer' ? q.answer : ''));
+      return `<div class="q waiting compact"><div class="q-top">${meta}<span class="q-state">${esc(st)} ${esc(ago(q.answeredAt))}</span></div>
+        <div class="q-text">${esc(q.question)}</div>${rec}
+        <div class="q-answer${q.dismissed ? ' dismissed' : ''}"><span class="badge ${esc(d === 'option' ? 'opt-' + ((((q.options || []).map(optOf).find((o) => o.label === q.chosenOption)) || {}).type || 'neutral') : d)}">${esc(DECISION[d] || 'Answered')}</span>${shown ? ` ${esc(shown)}` : ''}</div>
+        <div class="q-status waiting"><span class="spin"></span><div>Answer saved. Waiting for ${esc(q.askedBy || 'the agent')} to pick it up<small>An agent that is waiting gets it right away; otherwise it arrives with the agent's next turn or your next message to it.</small></div></div>
+        <div class="q-actions"><button class="link" data-qreopen="${esc(q.id)}" title="Change the answer before the agent takes it">Change answer</button></div></div>`;
+    };
+    body.innerHTML = (open.length ? open.map(qHtml).join('') : '<div class="empty">No open questions</div>') +
+      (answered.length ? `<div class="section-label">Answered · waiting for the agent</div>${answered.map(qHtml).join('')}` : '') +
+      (history.length ? `<button class="hist-toggle" id="histToggle">${showHistory ? '▾' : '▸'} Received by agents (${history.length})</button>${showHistory ? history.map(qHtml).join('') : ''}` : '');
+    if (focused) { const ta = body.querySelector(`[data-qtext="${CSS.escape(focused)}"]`); if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = ta.value.length; } }
+  }
+
+  function sendAnswer(id, decision, text, option) {
+    text = (text || '').trim();
+    if (decision === 'answer' && !text) { const ta = $('#qbody').querySelector(`[data-qtext="${CSS.escape(id)}"]`); if (ta) { ta.focus(); ta.placeholder = 'Type an answer first, or use Accept / Reject'; } return; }
+    const q = state.questions.find((x) => x.id === id);
+    const label = decision === 'accept' ? 'Accept' + (text ? ` — ${text}` : '') : decision === 'reject' ? 'Reject' + (text ? ` — ${text}` : '') : decision === 'option' ? option + (text ? ` — ${text}` : '') : text;
+    pending[id] = { label: label.length > 140 ? label.slice(0, 140) + '…' : label, args: { id, decision, text, option }, draft: qDrafts[id] };
+    delete qDrafts[id];
+    renderQuestions();
+    submitPending(id, q);
+  }
+  function submitPending(id) {
+    const p = pending[id];
+    if (!p) return;
+    p.error = null;
+    renderQuestions();
+    op('answer', p.args).then(() => {
+      delete pending[id];
+      toast(`Answer to ${id} saved — waiting for the agent to pick it up`, 'info');
+      renderQuestions();
+    }).catch((e) => {
+      if (pending[id]) pending[id].error = e.message;
+      toast(`Could not send the answer to ${id}: ${e.message}`, 'err');
+      renderQuestions();
+    });
+  }
+  const draftOf = (id) => { const ta = $('#qbody').querySelector(`[data-qtext="${CSS.escape(id)}"]`); return ta ? ta.value : ''; };
+  $('#questionsBtn').addEventListener('click', () => { $('#drawer').classList.remove('open'); $('#qdrawer').classList.toggle('open'); });
+  $('#closeQ').addEventListener('click', () => $('#qdrawer').classList.remove('open'));
+  (() => {
+    const dr = $('#qdrawer');
+    const w = store.get('qWidth', '');
+    if (w) dr.style.setProperty('--qw', w + 'px');
+    if (store.get('qWide', '0') === '1') { dr.classList.add('wide'); $('#wideQ').textContent = 'Narrow'; }
+    $('#wideQ').addEventListener('click', () => {
+      const on = dr.classList.toggle('wide');
+      $('#wideQ').textContent = on ? 'Narrow' : 'Wide';
+      store.set('qWide', on ? '1' : '0');
+    });
+    let startX = null, startW = 0;
+    $('#qresize').addEventListener('mousedown', (e) => {
+      startX = e.clientX; startW = dr.getBoundingClientRect().width;
+      dr.classList.remove('wide'); $('#wideQ').textContent = 'Wide'; store.set('qWide', '0');
+      $('#qresize').classList.add('on'); document.body.style.userSelect = 'none'; e.preventDefault();
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (startX == null) return;
+      const nw = Math.max(420, Math.min(window.innerWidth * 0.96, startW + (startX - e.clientX)));
+      dr.style.setProperty('--qw', Math.round(nw) + 'px');
+    });
+    window.addEventListener('mouseup', () => {
+      if (startX == null) return;
+      startX = null; $('#qresize').classList.remove('on'); document.body.style.userSelect = '';
+      store.set('qWidth', String(Math.round(dr.getBoundingClientRect().width)));
+    });
+  })();
+  $('#qbody').addEventListener('input', (e) => { if (e.target.dataset.qtext) qDrafts[e.target.dataset.qtext] = e.target.value; });
+  $('#qbody').addEventListener('keydown', (e) => {
+    if (e.target.dataset.qtext && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendAnswer(e.target.dataset.qtext, 'answer', e.target.value); }
+  });
+  $('#qbody').addEventListener('click', (e) => {
+    const d = e.target.dataset;
+    if (e.target.id === 'histToggle') { showHistory = !showHistory; renderQuestions(); return; }
+    if (d.qretry) { submitPending(d.qretry); return; }
+    if (d.qedit) { if (pending[d.qedit] && pending[d.qedit].draft) qDrafts[d.qedit] = pending[d.qedit].draft; delete pending[d.qedit]; renderQuestions(); return; }
+    if (d.qdecide) sendAnswer(d.q, d.qdecide, draftOf(d.q));
+    else if (d.qopt || (e.target.closest && e.target.closest('[data-qopt]'))) {
+      const el = d.qopt ? e.target : e.target.closest('[data-qopt]');
+      const q = state.questions.find((x) => x.id === el.dataset.qopt);
+      const o = q && q.options[Number(el.dataset.i)];
+      if (o) sendAnswer(q.id, 'option', draftOf(q.id), typeof o === 'string' ? o : o.label);
+    }
+    else if (d.qsend) sendAnswer(d.qsend, 'answer', draftOf(d.qsend));
+    else if (d.qreopen) op('reopen', { id: d.qreopen }).catch(alertError);
+    else if (d.qdismiss) op('dismiss', { id: d.qdismiss }).catch(alertError);
+    else if (d.qhide) op('hideQuestion', { id: d.qhide }).catch(alertError);
+  });
+
+  // ---------------------------------------------------------------- render
+  function renderProjects() {
+    const sel = $('#project');
+    const counts = {};
+    for (const t of state.tasks) if (!t.archived) counts[t.project] = (counts[t.project] || 0) + 1;
+    const entries = Object.entries(state.projects).sort((a, b) => a[1].name.localeCompare(b[1].name));
+    if (projectFilter !== '__all' && !state.projects[projectFilter]) projectFilter = '__all';
+    sel.innerHTML = `<option value="__all">All projects (${state.tasks.filter((t) => !t.archived).length})</option>` +
+      entries.map(([p, v]) => `<option value="${esc(p)}" title="${esc(p)}">${esc(v.name)} (${counts[p] || 0})</option>`).join('');
+    sel.value = projectFilter;
+  }
+
+  function renderCard(t, all, kids) {
+    const parent = t.parentId && all[t.parentId];
+    const showProject = projectFilter === '__all' && state.projects[t.project];
+    const isDone = t.status === 'done';
+    let foot = '';
+    if (kids && kids.length) {
+      const d = kids.filter((k) => k.status === 'done').length;
+      foot += `<div class="progress"><div class="bar"><i style="width:${Math.round((d / kids.length) * 100)}%"></i></div>${d}/${kids.length}</div>`;
+    }
+    if (t.assignee && !isDone) {
+      const c = colorFor(t.assignee);
+      foot += `<div class="who"><span class="avatar" style="background:${c}">${esc(initials(t.assignee))}</span>${esc(t.assignee)}</div>`;
+      if (t.status === 'in_progress') foot += `<span class="working"><i></i>working</span>`;
+    } else if (t.assignee && isDone) {
+      foot += `<span class="tag">by ${esc(t.assignee)}</span>`;
+    }
+    foot += `<span class="time" title="${esc(t.updatedAt)}">${esc(ago(isDone ? t.finishedAt : t.updatedAt))}</span>`;
+
+    return `<article class="card${checked.has(t.id) ? ' checked' : ''}" draggable="true" data-id="${esc(t.id)}" data-status="${esc(t.status)}">
+      <div class="card-top">
+        ${isDone ? `<input type="checkbox" class="check" data-check="${esc(t.id)}" ${checked.has(t.id) ? 'checked' : ''} title="Mark for removal">` : ''}
+        <span class="tid">${esc(t.id)}</span>
+        ${showProject ? `<span class="tag" title="${esc(t.project)}">${esc(state.projects[t.project].name)}</span>` : ''}
+        ${t.source === 'mirror' ? '<span class="tag mirror" title="Mirrored from an agent\'s task list">auto</span>' : ''}
+        <button class="x${confirmDelete === t.id ? ' confirm' : ''}" data-del="${esc(t.id)}" title="Delete task">${confirmDelete === t.id ? 'delete?' : '✕'}</button>
+      </div>
+      ${parent ? `<div class="parent-ref">↳ ${esc(parent.id)} · ${esc(parent.title)}</div>` : ''}
+      <div class="title">${esc(t.title)}</div>
+      ${t.description ? `<div class="desc${openDesc.has(t.id) ? ' open' : ''}" data-desc="${esc(t.id)}">${esc(t.description)}</div>` : ''}
+      ${t.note ? `<div class="note">${esc(t.note)}</div>` : ''}
+      ${openQuestionsFor(t.id).map((q) => `<button class="qchip" data-openq="${esc(q.id)}">? ${esc(q.id)} waiting for your answer</button>`).join('')}
+      <div class="card-foot">${foot}</div>
+    </article>`;
+  }
+
+  function render() {
+    if (dragId) { renderPending = true; return; }
+    renderProjects();
+    const all = byId();
+    const tasks = visibleTasks();
+    const kidsOf = {};
+    for (const t of state.tasks) if (t.parentId) (kidsOf[t.parentId] = kidsOf[t.parentId] || []).push(t);
+    for (const id of [...checked]) if (!all[id] || all[id].status !== 'done' || all[id].archived) checked.delete(id);
+
+    const scroll = {};
+    document.querySelectorAll('.col-body').forEach((el) => { scroll[el.parentElement.dataset.status] = el.scrollTop; });
+    const addValue = $('#addInput') ? $('#addInput').value : '';
+    const addHadFocus = !!$('#addInput') && document.activeElement === $('#addInput');
+
+    $('#board').innerHTML = COLUMNS.map((c) => {
+      const list = sortFor(c.status, tasks.filter((t) => t.status === c.status));
+      let actions = '';
+      if (c.status === 'todo') actions = `<button class="btn sm primary" id="addBtn">+ Add</button>`;
+      if (c.status === 'done' && list.length) {
+        actions = `<button class="btn sm" id="checkAll">${list.every((t) => checked.has(t.id)) ? 'None' : 'All'}</button>
+                   <button class="btn sm done" id="removeChecked" ${checked.size ? '' : 'disabled'}>Remove ${checked.size || ''}</button>`;
+      }
+      return `<section class="col" data-status="${c.status}">
+        <div class="col-head"><span class="dot"></span><h2>${c.label}</h2><span class="count">${list.length}</span><div class="actions">${actions}</div></div>
+        ${c.status === 'todo' && addOpen ? `<div class="add-row"><input id="addInput" placeholder="${projectFilter === '__all' ? 'Pick a project first' : 'New task title, Enter to add'}" ${projectFilter === '__all' ? 'disabled' : ''}></div>` : ''}
+        <div class="col-body">${list.length ? list.map((t) => renderCard(t, all, kidsOf[t.id])).join('') : `<div class="empty">${c.status === 'done' ? 'Nothing finished yet' : 'No tasks'}</div>`}</div>
+      </section>`;
+    }).join('');
+
+    document.querySelectorAll('.col-body').forEach((el) => { el.scrollTop = scroll[el.parentElement.dataset.status] || 0; });
+    const ai = $('#addInput');
+    if (ai) { ai.value = addValue; if (!ai.disabled && (focusAdd || addHadFocus)) ai.focus(); }
+    focusAdd = false;
+
+    const open = tasks.filter((t) => t.status !== 'done');
+    const workers = new Set(tasks.filter((t) => t.status === 'in_progress' && t.assignee).map((t) => t.assignee));
+    $('#stats').innerHTML = `<span><b>${open.length}</b> open</span><span><b>${workers.size}</b> working</span><span><b>${tasks.length - open.length}</b> finished</span>`;
+    const archived = state.tasks.filter((t) => t.archived && (projectFilter === '__all' || t.project === projectFilter));
+    $('#archiveBtn').textContent = `Archive (${archived.length})`;
+    renderDrawer(archived);
+    renderQuestions();
+    renderUsage();
+    renderLimits();
+  }
+
+  function renderDrawer(archived) {
+    const list = archived.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    $('#drawerBody').innerHTML = list.length ? list.map((t) => `<div class="arch"><span class="tid">${esc(t.id)}</span><span class="t" title="${esc(t.title)}">${esc(t.title)}</span><button class="btn sm" data-restore="${esc(t.id)}">Restore</button></div>`).join('')
+      : '<div class="empty">Nothing removed yet</div>';
+  }
+
+  // ---------------------------------------------------------------- events
+  $('#project').addEventListener('change', (e) => {
+    projectFilter = e.target.value; store.set('project', projectFilter);
+    checked.clear();
+    const u = new URL(location.href);
+    if (projectFilter === '__all') u.searchParams.delete('project'); else u.searchParams.set('project', projectFilter);
+    history.replaceState(null, '', u);
+    render();
+  });
+  $('#search').addEventListener('input', (e) => { search = e.target.value; render(); });
+  $('#archiveBtn').addEventListener('click', () => { $('#qdrawer').classList.remove('open'); $('#drawer').classList.toggle('open'); });
+  $('#closeDrawer').addEventListener('click', () => $('#drawer').classList.remove('open'));
+  $('#drawerBody').addEventListener('click', (e) => {
+    const id = e.target.dataset.restore;
+    if (id) op('unarchive', { ids: [id] }).catch(alertError);
+  });
+
+  $('#board').addEventListener('click', (e) => {
+    const t = e.target;
+    if (t.dataset.check) {
+      t.checked ? checked.add(t.dataset.check) : checked.delete(t.dataset.check);
+      render(); return;
+    }
+    if (t.dataset.desc) { openDesc.has(t.dataset.desc) ? openDesc.delete(t.dataset.desc) : openDesc.add(t.dataset.desc); render(); return; }
+    if (t.dataset.del) {
+      if (confirmDelete === t.dataset.del) { confirmDelete = null; op('remove', { id: t.dataset.del }).catch(alertError); }
+      else { confirmDelete = t.dataset.del; render(); setTimeout(() => { if (confirmDelete === t.dataset.del) { confirmDelete = null; render(); } }, 3000); }
+      return;
+    }
+    if (t.dataset.openq) { $('#drawer').classList.remove('open'); $('#qdrawer').classList.add('open'); const ta = $('#qbody').querySelector(`[data-qtext="${CSS.escape(t.dataset.openq)}"]`); if (ta) ta.focus(); return; }
+    if (t.id === 'addBtn') { addOpen = !addOpen; focusAdd = addOpen; render(); return; }
+    if (t.id === 'checkAll') {
+      const done = visibleTasks().filter((x) => x.status === 'done');
+      const allOn = done.every((x) => checked.has(x.id));
+      done.forEach((x) => (allOn ? checked.delete(x.id) : checked.add(x.id)));
+      render(); return;
+    }
+    if (t.id === 'removeChecked' && checked.size) {
+      const ids = [...checked]; checked.clear();
+      op('archive', { ids }).catch(alertError);
+    }
+  });
+
+  $('#board').addEventListener('keydown', (e) => {
+    if (e.target.id !== 'addInput') return;
+    if (e.key === 'Escape') { addOpen = false; render(); return; }
+    if (e.key !== 'Enter') return;
+    const title = e.target.value.trim();
+    if (!title || projectFilter === '__all') return;
+    e.target.value = '';
+    op('add', { project: projectFilter, title, source: 'ui' }).catch(alertError);
+  });
+
+  // drag & drop between columns
+  $('#board').addEventListener('dragstart', (e) => {
+    const card = e.target.closest && e.target.closest('.card');
+    if (!card) return;
+    dragId = card.dataset.id; card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', dragId);
+  });
+  $('#board').addEventListener('dragend', () => { dragId = null; document.querySelectorAll('.dragging,.drop').forEach((el) => el.classList.remove('dragging', 'drop')); if (renderPending) { renderPending = false; render(); } });
+  $('#board').addEventListener('dragover', (e) => {
+    const col = e.target.closest && e.target.closest('.col');
+    if (!col || !dragId) return;
+    e.preventDefault();
+    document.querySelectorAll('.col.drop').forEach((el) => el !== col && el.classList.remove('drop'));
+    col.classList.add('drop');
+  });
+  $('#board').addEventListener('drop', (e) => {
+    const col = e.target.closest && e.target.closest('.col');
+    if (!col || !dragId) return;
+    e.preventDefault();
+    const id = dragId; const status = col.dataset.status;
+    const task = state.tasks.find((t) => t.id === id);
+    if (task && task.status !== status) op('update', { id, status }).catch(alertError);
+  });
+
+  function toast(text, kind = 'ok', ms = 4500) {
+    const el = document.createElement('div');
+    el.className = `toast ${kind}`;
+    el.textContent = text;
+    $('#toasts').appendChild(el);
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, ms);
+  }
+  function alertError(err) { console.error(err); toast(err.message || String(err), 'err', 7000); }
+
+  /** Toasts for question changes made elsewhere (agent picked an answer up, new question arrived). */
+  function questionTransitions(next) {
+    if (prevQuestions) {
+      for (const q of next) {
+        const before = prevQuestions[q.id];
+        if (!before && q.status === 'open') toast(`New question ${q.id}${q.askedBy ? ` from ${q.askedBy}` : ''}: ${q.question.slice(0, 90)}`, 'info', 6000);
+        else if (before && !before.delivered && q.delivered && q.status !== 'open') toast(`✓ ${q.id}${q.externalId ? ` [${q.externalId}]` : ''} received by ${q.askedBy || 'the agent'}`, 'ok', 6000);
+      }
+    }
+    prevQuestions = Object.fromEntries(next.map((q) => [q.id, { delivered: q.delivered, status: q.status }]));
+  }
+
+  function renderBanner() {
+    const b = $('#banner');
+    const sv = state.serverVersion;
+    if (sv === UI_VERSION) { b.classList.remove('show'); return; }
+    b.innerHTML = `<b>Version mismatch:</b>&nbsp;the board server runs ${sv ? 'v' + esc(sv) : 'an older version'}, this page is v${UI_VERSION}. Answers and buttons may not work. Restart your Claude sessions (or quit the oldest one); sessions with v1.6+ take the board over automatically from now on.`;
+    b.classList.add('show');
+  }
+
+  // ---------------------------------------------------------------- live updates
+  function setConn(live, text) {
+    $('#conn').classList.toggle('live', live);
+    $('#conn span').textContent = text || (live ? 'live' : 'reconnecting…');
+    $('#conn').title = live ? 'Live: updates appear instantly' : (text || 'Reconnecting to the board…');
+  }
+  function connectState() {
+    const es = new EventSource('/api/events');
+    es.addEventListener('state', (e) => { state = JSON.parse(e.data); state.questions = state.questions || []; questionTransitions(state.questions); setConn(true); renderBanner(); render(); });
+    es.addEventListener('usage', (e) => { usage = JSON.parse(e.data); renderUsage(); });
+    es.onopen = () => setConn(true);
+    es.onerror = () => setConn(false); // EventSource retries on its own; a new leader picks up within ~2s
+    connectState.es && connectState.es.close();
+    connectState.es = es;
+  }
+  setInterval(() => document.querySelectorAll('.time').length && !dragId && render(), 60000);
+  setInterval(renderLimits, 20000);
+  connectState();
+})();
+</script>
+</body>
+</html>
