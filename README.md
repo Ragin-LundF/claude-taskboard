@@ -201,7 +201,7 @@ Choose the source in the usage panel (**Plan limits from**):
 | Source | Works in | How |
 |---|---|---|
 | **Status line** (default) | Claude Code in a terminal | Run **`/taskboard-limits`** once. It adds a small status-line bridge to `~/.claude/settings.json` (backed up first; an existing status line is kept and still shown). Claude Code passes your Pro/Max `rate_limits` to it with every response. |
-| **Usage API** | Everywhere: chat windows (e.g. Orca), the desktop app, IDEs, the terminal | The board asks Anthropic's usage endpoint every 2.5 minutes with your Claude Code login, read from the macOS Keychain (*Claude Code-credentials*, macOS asks once) or `~/.claude/.credentials.json`. **This endpoint is not officially documented and may change.** |
+| **Usage API** | Everywhere: chat windows (e.g. Orca), the desktop app, IDEs, the terminal | The board asks Anthropic's usage endpoint every 2.5 minutes with your Claude Code login. It tries the stored logins one after another until one is accepted: the macOS Keychain item *Claude Code-credentials* (macOS asks once), then `~/.claude/.credentials.json`, then other *Claude Code-credentials-…* Keychain items. **This endpoint is not officially documented and may change.** |
 | **Both** | | Shows whichever source has the newest numbers. |
 
 Undo the status-line setup with `/taskboard-limits remove`.

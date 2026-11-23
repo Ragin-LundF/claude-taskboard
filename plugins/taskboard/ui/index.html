@@ -399,7 +399,7 @@
   let state = { projects: {}, tasks: [], questions: [] };
   let usage = null;
   const qDrafts = {};
-  const UI_VERSION = '1.8.2';
+  const UI_VERSION = '1.8.3';
   const pending = {}; // question id -> { label, error, args }
   let showHistory = false;
   let confirmQDelete = null;
@@ -540,7 +540,7 @@
         (x.hitAt ? ` · at this pace the limit is reached around ${resetText({ resetsAt: x.hitAt })}` : '') + ` · ${asOf}`;
       return `<div class="lim ${x.level}${x.stale ? ' stale' : ''}" title="${esc(tip)}"><span class="lim-k">${LIM_LABEL[x.key]}</span>
         <span class="lim-bar"><i style="width:${Math.min(100, x.used)}%"></i>${x.elapsed != null ? `<b style="left:calc(${x.elapsed}% - 1px)"></b>` : ''}</span>
-        <span class="lim-v">${Math.round(x.left)}% <small>left</small></span>${x.resetsAt && !x.reset ? `<span class="lim-t">↻ ${esc(until(x.resetsAt))}</span>` : ''}</div>`;
+        <span class="lim-v">${x.stale && x.reset ? '–' : Math.round(x.left) + '%'} <small>${x.stale && x.reset ? 'no data' : 'left'}</small></span>${x.resetsAt && !x.reset ? `<span class="lim-t">↻ ${esc(until(x.resetsAt))}</span>` : ''}</div>`;
     }).join('') + limitsStatusChip();
   }
 
@@ -567,8 +567,14 @@
       return `<div class="tile"><div class="k">${title}</div><div class="v" style="color:var(--faint)">–</div>
         <div class="s">No data yet</div><div class="s" style="color:var(--faint)">Pick a source above</div></div>`;
     }
+    if (x.stale && x.reset) {
+      return `<div class="tile"><div class="k">${title} <em>no current data</em></div><div class="v" style="color:var(--faint)">–</div>
+        <div class="s">The window has reset since the last update (${esc(resetText({ resetsAt: state.limits.updatedAt }))})</div>
+        <div class="s" style="color:var(--faint)">Waiting for fresh numbers from the selected source</div></div>`;
+    }
     let pace = '';
-    if (x.hitAt) pace = `<div class="pace bad">Limit reached ~${esc(resetText({ resetsAt: x.hitAt }))} at this pace</div>`;
+    if (x.stale) pace = '';
+    else if (x.hitAt) pace = `<div class="pace bad">Limit reached ~${esc(resetText({ resetsAt: x.hitAt }))} at this pace</div>`;
     else if (x.elapsed != null && x.used > x.elapsed + 10) pace = `<div class="pace mid">Ahead of pace (${Math.round(x.elapsed)}% of time used)</div>`;
     else if (x.elapsed != null) pace = `<div class="pace">On track (${Math.round(x.elapsed)}% of time used)</div>`;
     return `<div class="tile ${x.level}"><div class="k">${title} <em>${x.stale ? 'stale · ' : ''}${state.limits.source === 'api' ? 'usage API' : 'status line'} · as of ${esc(resetText({ resetsAt: state.limits.updatedAt }))}</em></div>

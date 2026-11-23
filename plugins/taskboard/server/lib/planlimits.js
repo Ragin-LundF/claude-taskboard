@@ -15,42 +15,63 @@ const { execFile } = require('child_process');
 
 const USAGE_URL = process.env.TASKBOARD_USAGE_API_URL || 'https://api.anthropic.com/api/oauth/usage';
 
-let cachedToken = null; // { token, expiresAt }
+let cachedToken = null; // { token, expiresAt, source }
 
-function configDir() {
-  return (process.env.CLAUDE_CONFIG_DIR || '').split(',')[0].trim() || path.join(os.homedir(), '.claude');
+function configDirs() {
+  const dirs = (process.env.CLAUDE_CONFIG_DIR || '').split(',').map((d) => d.trim()).filter(Boolean);
+  dirs.push(path.join(os.homedir(), '.claude'));
+  return [...new Set(dirs)];
 }
 
-function parseCredentials(text) {
+function parseCredentials(text, source) {
   const j = JSON.parse(text);
   const o = j.claudeAiOauth || j;
   if (!o || !o.accessToken) throw new Error('No Claude login found in the stored credentials');
-  return { token: o.accessToken, expiresAt: Number(o.expiresAt) || null };
+  return { token: o.accessToken, expiresAt: Number(o.expiresAt) || null, source };
 }
 
-function readKeychain() {
-  return new Promise((resolve, reject) => {
-    // waits for the user if macOS asks for Keychain permission
-    execFile('security', ['find-generic-password', '-s', 'Claude Code-credentials', '-w'], { timeout: 120000 }, (err, stdout) => {
-      if (err) return reject(new Error('Could not read "Claude Code-credentials" from the Keychain (denied or not logged in)'));
-      try { resolve(parseCredentials(stdout.trim())); } catch (e) { reject(e); }
-    });
+function run(cmd, args, timeout) {
+  return new Promise((resolve) => {
+    execFile(cmd, args, { timeout, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => resolve(err ? null : stdout));
   });
 }
 
-async function getToken(force) {
-  if (!force && cachedToken && (!cachedToken.expiresAt || cachedToken.expiresAt > Date.now() + 60000)) return cachedToken;
-  const file = process.env.TASKBOARD_CREDENTIALS_FILE || path.join(configDir(), '.credentials.json');
-  let creds = null;
-  if (fs.existsSync(file)) creds = parseCredentials(fs.readFileSync(file, 'utf8'));
-  else if (process.platform === 'darwin') creds = await readKeychain();
-  else throw new Error(`No Claude Code credentials found (${file})`);
-  if (creds.expiresAt && creds.expiresAt < Date.now()) {
-    cachedToken = null;
-    throw new Error('Claude Code login token expired; it refreshes the next time Claude Code runs');
+/** Names of all Keychain items for Claude Code logins (attributes only, no secrets are read here). */
+async function keychainServices() {
+  const names = new Set(['Claude Code-credentials']);
+  const dump = await run('security', ['dump-keychain'], 10000);
+  if (dump) for (const m of dump.matchAll(/"svce"<blob>="(Claude Code-credentials[^"]*)"/g)) names.add(m[1]);
+  return [...names];
+}
+
+/**
+ * Stored Claude Code logins in the order they are tried, read lazily so macOS asks for as few
+ * Keychain permissions as possible: the main Keychain item first, then credentials files
+ * (newest first), then other "Claude Code-credentials-*" Keychain items.
+ */
+async function* credentialCandidates() {
+  const mac = process.platform === 'darwin' && !process.env.TASKBOARD_CREDENTIALS_FILE;
+  const readKeychain = async (svc) => {
+    // waits for the user if macOS asks for Keychain permission
+    const secret = await run('security', ['find-generic-password', '-s', svc, '-w'], 120000);
+    if (!secret) return null;
+    try { return parseCredentials(secret.trim(), `Keychain "${svc}"`); } catch { return null; }
+  };
+  if (mac) { const c = await readKeychain('Claude Code-credentials'); if (c) yield c; }
+  const files = process.env.TASKBOARD_CREDENTIALS_FILE ? [process.env.TASKBOARD_CREDENTIALS_FILE] : configDirs().map((d) => path.join(d, '.credentials.json'));
+  const fromFiles = [];
+  for (const f of files) {
+    try { if (fs.existsSync(f)) fromFiles.push(parseCredentials(fs.readFileSync(f, 'utf8'), f)); } catch { /* unreadable */ }
   }
-  cachedToken = creds;
-  return creds;
+  fromFiles.sort((a, b) => (b.expiresAt || Infinity) - (a.expiresAt || Infinity));
+  yield* fromFiles;
+  if (mac) {
+    for (const svc of await keychainServices()) {
+      if (svc === 'Claude Code-credentials') continue;
+      const c = await readKeychain(svc);
+      if (c) yield c;
+    }
+  }
 }
 
 function request(url, token) {
@@ -89,16 +110,37 @@ function mapWindow(w) {
   return { used: w.utilization, resetsAt: Number.isFinite(t) ? t : null };
 }
 
-/** Returns { five_hour, seven_day } in the board's format. */
+/** Returns { five_hour, seven_day } in the board's format. Tries the stored logins newest first. */
 async function fetchPlanLimits() {
-  let creds = await getToken(false);
-  let data;
-  try {
-    data = await request(USAGE_URL, creds.token);
-  } catch (e) {
-    if (!e.unauthorized) throw e;
-    creds = await getToken(true); // token may have been refreshed by Claude Code
-    data = await request(USAGE_URL, creds.token);
+  const tried = [];
+  const attempt = async (c) => {
+    try {
+      const data = await request(USAGE_URL, c.token);
+      cachedToken = c;
+      return data;
+    } catch (e) {
+      if (!e.unauthorized) throw e;
+      tried.push(c);
+      return null;
+    }
+  };
+  let data = cachedToken ? await attempt(cachedToken) : null;
+  if (!data) {
+    cachedToken = null;
+    const seen = [];
+    for await (const c of credentialCandidates()) {
+      if (seen.some((t) => t.token === c.token)) continue;
+      seen.push(c);
+      if (tried.some((t) => t.token === c.token)) continue;
+      data = await attempt(c);
+      if (data) break;
+    }
+    if (!seen.length) throw new Error('No Claude Code login found (Keychain "Claude Code-credentials" or ~/.claude/.credentials.json)');
+    if (!data) {
+      const newest = [...seen].sort((a, b) => (b.expiresAt || Infinity) - (a.expiresAt || Infinity))[0];
+      const exp = newest.expiresAt ? new Date(newest.expiresAt).toLocaleString() : 'unknown';
+      throw new Error(`All ${seen.length} stored Claude Code login(s) were rejected; the newest (${newest.source}) expires ${exp}. Run /login in Claude Code if this persists.`);
+    }
   }
   const out = { five_hour: mapWindow(data.five_hour), seven_day: mapWindow(data.seven_day) };
   if (!out.five_hour && !out.seven_day) throw new Error('Usage endpoint returned no 5h/weekly windows (API-key login?)');
