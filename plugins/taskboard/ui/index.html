@@ -40,6 +40,8 @@
     border-bottom: 1px solid var(--line-soft); background: rgba(10, 13, 19, .7); backdrop-filter: blur(8px);
   }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; font-size: 16px; margin-right: 8px; }
+  .brand .ver { font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--faint); align-self: flex-start; margin: 2px 0 0 -4px; cursor: default; }
+  .brand .ver.mismatch { color: var(--doing); }
   .brand-mark { display: flex; gap: 3px; align-items: flex-end; height: 20px; }
   .brand-mark i { width: 5px; border-radius: 2px; display: block; }
   .brand-mark i:nth-child(1) { height: 20px; background: var(--todo); }
@@ -194,6 +196,9 @@
   .lim.warn { --lim: var(--doing); } .lim.crit { --lim: var(--blocked); }
   .lim.crit .lim-v { color: var(--blocked); } .lim.warn .lim-v { color: var(--doing); }
   .lim.stale { opacity: .55; }
+  .lim-chip { font-size: 11px; color: var(--doing); border: 1px solid rgba(245,184,75,.4); border-radius: 6px; padding: 1px 7px; cursor: help; }
+  .lim-chip.old { color: #1c1203; background: var(--doing); border-color: var(--doing); }
+  .lim-chip.err { color: #ffb3bf; border-color: rgba(255,107,129,.5); }
   .lim-setup { font-size: 12px; color: var(--faint); border: 1px dashed var(--line); padding: 3px 8px; border-radius: 8px; cursor: help; }
   .gauge { position: relative; height: 8px; border-radius: 99px; background: var(--bg-2); border: 1px solid var(--line-soft); margin-top: 9px; }
   .gauge i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; background: var(--lim, var(--todo)); }
@@ -349,7 +354,7 @@
 </head>
 <body>
 <header>
-  <div class="brand"><span class="brand-mark"><i></i><i></i><i></i></span>Taskboard</div>
+  <div class="brand"><span class="brand-mark"><i></i><i></i><i></i></span>Taskboard<span class="ver" id="ver"></span></div>
   <div class="field"><label for="project">Project</label><select id="project"></select></div>
   <div class="field"><label for="search">Find</label><input id="search" placeholder="title, assignee, T-12…" autocomplete="off"></div>
   <div class="spacer"></div>
@@ -394,7 +399,7 @@
   let state = { projects: {}, tasks: [], questions: [] };
   let usage = null;
   const qDrafts = {};
-  const UI_VERSION = '1.8.0';
+  const UI_VERSION = '1.8.2';
   const pending = {}; // question id -> { label, error, args }
   let showHistory = false;
   let confirmQDelete = null;
@@ -536,7 +541,24 @@
       return `<div class="lim ${x.level}${x.stale ? ' stale' : ''}" title="${esc(tip)}"><span class="lim-k">${LIM_LABEL[x.key]}</span>
         <span class="lim-bar"><i style="width:${Math.min(100, x.used)}%"></i>${x.elapsed != null ? `<b style="left:calc(${x.elapsed}% - 1px)"></b>` : ''}</span>
         <span class="lim-v">${Math.round(x.left)}% <small>left</small></span>${x.resetsAt && !x.reset ? `<span class="lim-t">↻ ${esc(until(x.resetsAt))}</span>` : ''}</div>`;
-    }).join('');
+    }).join('') + limitsStatusChip();
+  }
+
+  /** How old the shown limits are, and whether the selected source currently fails. */
+  function limitsStatusChip() {
+    const L = state.limits || {};
+    const ls = state.limitsSources || {};
+    const age = L.updatedAt ? Date.now() - L.updatedAt : null;
+    const src = L.source === 'api' ? 'usage API' : 'status line';
+    const parts = [];
+    if (ls.source !== 'statusline' && ls.apiStatus && !ls.apiStatus.ok) {
+      parts.push(`<span class="lim-chip err" title="Usage API: ${esc(ls.apiStatus.error)} (last try ${esc(ago(new Date(ls.apiStatus.at).toISOString()))}). Showing older numbers from ${esc(src)}.">⚠ API error</span>`);
+    }
+    if (age != null && age > 10 * 60000) {
+      const hint = L.source !== 'api' ? ' Chat windows (Orca, desktop app) do not run status lines: switch the source to Usage API in the usage panel.' : '';
+      parts.push(`<span class="lim-chip ${age > 60 * 60000 ? 'old' : ''}" title="These numbers are from ${esc(new Date(L.updatedAt).toLocaleString())} via ${esc(src)}.${esc(hint)}">as of ${esc(ago(new Date(L.updatedAt).toISOString()))}</span>`);
+    }
+    return parts.join('');
   }
 
   function limitTile(key, title, blockCost) {
@@ -549,7 +571,7 @@
     if (x.hitAt) pace = `<div class="pace bad">Limit reached ~${esc(resetText({ resetsAt: x.hitAt }))} at this pace</div>`;
     else if (x.elapsed != null && x.used > x.elapsed + 10) pace = `<div class="pace mid">Ahead of pace (${Math.round(x.elapsed)}% of time used)</div>`;
     else if (x.elapsed != null) pace = `<div class="pace">On track (${Math.round(x.elapsed)}% of time used)</div>`;
-    return `<div class="tile ${x.level}"><div class="k">${title} <em>${x.stale ? 'stale · ' : ''}${state.limits.source === 'api' ? 'usage API' : 'status line'}</em></div>
+    return `<div class="tile ${x.level}"><div class="k">${title} <em>${x.stale ? 'stale · ' : ''}${state.limits.source === 'api' ? 'usage API' : 'status line'} · as of ${esc(resetText({ resetsAt: state.limits.updatedAt }))}</em></div>
       <div class="v">${Math.round(x.left)}% left</div>
       <div class="s">${Math.round(x.used)}% used</div>
       <div class="s">${x.reset ? 'Window reset, waiting for update' : x.resetsAt ? `Resets ${esc(resetText(x))} · in ${esc(until(x.resetsAt))}` : ''}</div>
@@ -1121,6 +1143,10 @@
   function renderBanner() {
     const b = $('#banner');
     const sv = state.serverVersion;
+    const v = $('#ver');
+    v.textContent = `v${sv || UI_VERSION}`;
+    v.classList.toggle('mismatch', !!sv && sv !== UI_VERSION);
+    v.title = sv === UI_VERSION ? `Taskboard v${sv}` : `Board server v${sv || '?'} · page v${UI_VERSION}`;
     if (sv === UI_VERSION) { b.classList.remove('show'); return; }
     b.innerHTML = `<b>Version mismatch:</b>&nbsp;the board server runs ${sv ? 'v' + esc(sv) : 'an older version'}, this page is v${UI_VERSION}. Answers and buttons may not work. Restart your Claude sessions (or quit the oldest one); sessions with v1.6+ take the board over automatically from now on.`;
     b.classList.add('show');

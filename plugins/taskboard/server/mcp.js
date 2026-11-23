@@ -10,7 +10,7 @@ const { detectProject, PORT, HOME } = require('./lib/config');
 const { BoardNode } = require('./lib/node');
 const a2ui = require('./lib/a2ui');
 
-const VERSION = '1.8.0';
+const VERSION = '1.8.2';
 const SUPPORTED_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const project = detectProject(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const node = new BoardNode();
