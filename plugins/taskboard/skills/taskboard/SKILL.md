@@ -65,7 +65,34 @@ by project (the git root of the session).
      the dependent card blocked.
    - subagents can ask too; tell them to pass their own name as `askedBy`.
    Hooks remind you when you write a questions file or end a turn with questions in the chat.
-10. **Usage** — `board_usage` reports token usage and API-equivalent cost (today, current 5-hour
+10. **Other answer types (A2UI)** — when a question needs more than one choice or free text, use
+    `board_ui` with A2UI v1.0 messages and the taskboard catalog
+    (`catalogId: "https://github.com/Ragin-LundF/claude-taskboard/catalog/v1"`). One surface per
+    question, `surfaceId` = your question id, exactly one component with `"id": "root"`:
+    ```json
+    {"version":"1.0","createSurface":{"surfaceId":"Q-31","catalogId":"https://github.com/Ragin-LundF/claude-taskboard/catalog/v1",
+     "components":[{"id":"root","component":"MultiChoice","question":"Which payment methods at launch?",
+     "options":[{"label":"Card","recommended":true},{"label":"Apple Pay"},{"label":"PayPal"}]}],
+     "metadata":{"taskId":"T-1","askedBy":"Alice"}}}
+    ```
+    | Component | Use for | Fields (besides `question`, `details`) |
+    |---|---|---|
+    | Decision | pick one, typed options | `recommendation`, `options[{label,type,recommended,description}]` |
+    | Confirm | accept / reject a recommendation | `recommendation`, `acceptLabel`, `rejectLabel` |
+    | MultiChoice | pick several | `options[{label,description,recommended}]`, `min`, `max` |
+    | Checklist | confirm points | `items[{label,checked}]` |
+    | Form | a few values at once | `fields[{name,label,type: text/textarea/number/select/boolean,options,required,default}]` |
+    | Range | a number | `min`, `max`, `step`, `unit`, `recommended` |
+    | DateTime | a date / time | `mode: date/time/datetime`, `min`, `max` |
+    | Ranking | an order | `items[]` |
+    | Info | a note, no answer (user acknowledges) | `text` |
+
+    `updateComponents` changes an open question, `deleteSurface` withdraws it. Answers arrive like
+    other answers, as one line (`SELECTED: …`, `CHECKED: … — NOT CHECKED: …`, `FORM: a=…; b=…`,
+    `VALUE: 25 min`, `DATE: …`, `ORDER: 1. … 2. …`, `ACKNOWLEDGED`). Use `board_answers` with
+    `format: "a2ui"` only if you need the raw A2UI action messages.
+
+11. **Usage** — `board_usage` reports token usage and API-equivalent cost (today, current 5-hour
     block, 7/30 days). Use it when the user asks about usage or cost.
 
 ## Rules

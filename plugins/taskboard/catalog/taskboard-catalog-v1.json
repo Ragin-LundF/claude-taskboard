@@ -1,0 +1,521 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Ragin-LundF/claude-taskboard/catalog/v1",
+  "catalogId": "https://github.com/Ragin-LundF/claude-taskboard/catalog/v1",
+  "protocolVersion": "1.0",
+  "title": "Claude Taskboard catalog v1",
+  "description": "High-level question components for the Claude Taskboard. One component (id \"root\") per surface; one surface per question. The board renders the components and answers with A2UI action messages.",
+  "instructions": "Create one surface per question with createSurface (surfaceId = your own question id, catalogId = this catalog). Put exactly one component with id \"root\" into components. Optional metadata: taskId, askedBy. Prefer a recommendation whenever you have one. Use updateComponents to change an open question and deleteSurface to withdraw it.",
+  "metadata": {
+    "answers": "action.name is \"answer\" (or \"acknowledge\" for Info, \"dismiss\" when the user declines); action.context holds the values described per component under x-answer."
+  },
+  "components": {
+    "Decision": {
+      "type": "object",
+      "description": "Choose one option (typed accept/neutral/reject, one may be recommended), or answer freely; optional comment.",
+      "properties": {
+        "component": {
+          "const": "Decision"
+        },
+        "id": {
+          "type": "string",
+          "description": "Always \"root\": one component per surface"
+        },
+        "question": {
+          "type": "string",
+          "description": "The question or title"
+        },
+        "details": {
+          "type": "string",
+          "description": "Context the user needs (simple Markdown)"
+        },
+        "recommendation": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "accept",
+                  "neutral",
+                  "reject"
+                ],
+                "description": "Color: accept green, neutral blue, reject red"
+              },
+              "recommended": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "label"
+            ]
+          },
+          "maxItems": 10
+        }
+      },
+      "required": [
+        "component",
+        "id",
+        "question"
+      ],
+      "additionalProperties": false,
+      "x-answer": {
+        "decision": "option | accept | reject | answer",
+        "choice": "chosen label",
+        "comment": "text"
+      }
+    },
+    "Confirm": {
+      "type": "object",
+      "description": "Accept or reject a recommendation, optionally with a comment or alternative.",
+      "properties": {
+        "component": {
+          "const": "Confirm"
+        },
+        "id": {
+          "type": "string",
+          "description": "Always \"root\": one component per surface"
+        },
+        "question": {
+          "type": "string",
+          "description": "The question or title"
+        },
+        "details": {
+          "type": "string",
+          "description": "Context the user needs (simple Markdown)"
+        },
+        "recommendation": {
+          "type": "string"
+        },
+        "acceptLabel": {
+          "type": "string"
+        },
+        "rejectLabel": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "component",
+        "id",
+        "question",
+        "recommendation"
+      ],
+      "additionalProperties": false,
+      "x-answer": {
+        "decision": "accept | reject",
+        "comment": "text"
+      }
+    },
+    "MultiChoice": {
+      "type": "object",
+      "description": "Select several options.",
+      "properties": {
+        "component": {
+          "const": "MultiChoice"
+        },
+        "id": {
+          "type": "string",
+          "description": "Always \"root\": one component per surface"
+        },
+        "question": {
+          "type": "string",
+          "description": "The question or title"
+        },
+        "details": {
+          "type": "string",
+          "description": "Context the user needs (simple Markdown)"
+        },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "recommended": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "label"
+            ]
+          }
+        },
+        "min": {
+          "type": "integer"
+        },
+        "max": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "component",
+        "id",
+        "question",
+        "options"
+      ],
+      "additionalProperties": false,
+      "x-answer": {
+        "selected": [
+          "labels"
+        ],
+        "comment": "text"
+      }
+    },
+    "Checklist": {
+      "type": "object",
+      "description": "Tick off points, e.g. acceptance criteria to confirm.",
+      "properties": {
+        "component": {
+          "const": "Checklist"
+        },
+        "id": {
+          "type": "string",
+          "description": "Always \"root\": one component per surface"
+        },
+        "question": {
+          "type": "string",
+          "description": "The question or title"
+        },
+        "details": {
+          "type": "string",
+          "description": "Context the user needs (simple Markdown)"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 30,
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "checked": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "label"
+            ]
+          }
+        }
+      },
+      "required": [
+        "component",
+        "id",
+        "question",
+        "items"
+      ],
+      "additionalProperties": false,
+      "x-answer": {
+        "checked": [
+          "labels"
+        ],
+        "unchecked": [
+          "labels"
+        ],
+        "comment": "text"
+      }
+    },
+    "Form": {
+      "type": "object",
+      "description": "A few named input fields.",
+      "properties": {
+        "component": {
+          "const": "Form"
+        },
+        "id": {
+          "type": "string",
+          "description": "Always \"root\": one component per surface"
+        },
+        "question": {
+          "type": "string",
+          "description": "The question or title"
+        },
+        "details": {
+          "type": "string",
+          "description": "Context the user needs (simple Markdown)"
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "text",
+                  "textarea",
+                  "number",
+                  "select",
+                  "boolean"
+                ]
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "placeholder": {
+                "type": "string"
+              },
+              "default": {}
+            },
+            "required": [
+              "name"
+            ]
+          }
+        }
+      },
+      "required": [
+        "component",
+        "id",
+        "question",
+        "fields"
+      ],
+      "additionalProperties": false,
+      "x-answer": {
+        "values": {
+          "<field name>": "value"
+        },
+        "comment": "text"
+      }
+    },
+    "Range": {
+      "type": "object",
+      "description": "A number via slider.",
+      "properties": {
+        "component": {
+          "const": "Range"
+        },
+        "id": {
+          "type": "string",
+          "description": "Always \"root\": one component per surface"
+        },
+        "question": {
+          "type": "string",
+          "description": "The question or title"
+        },
+        "details": {
+          "type": "string",
+          "description": "Context the user needs (simple Markdown)"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "step": {
+          "type": "number"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "default": {
+          "type": "number"
+        },
+        "recommended": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "component",
+        "id",
+        "question",
+        "min",
+        "max"
+      ],
+      "additionalProperties": false,
+      "x-answer": {
+        "value": "number",
+        "unit": "unit",
+        "comment": "text"
+      }
+    },
+    "DateTime": {
+      "type": "object",
+      "description": "A date and/or time (ISO 8601).",
+      "properties": {
+        "component": {
+          "const": "DateTime"
+        },
+        "id": {
+          "type": "string",
+          "description": "Always \"root\": one component per surface"
+        },
+        "question": {
+          "type": "string",
+          "description": "The question or title"
+        },
+        "details": {
+          "type": "string",
+          "description": "Context the user needs (simple Markdown)"
+        },
+        "mode": {
+          "enum": [
+            "date",
+            "time",
+            "datetime"
+          ]
+        },
+        "default": {
+          "type": "string"
+        },
+        "min": {
+          "type": "string"
+        },
+        "max": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "component",
+        "id",
+        "question"
+      ],
+      "additionalProperties": false,
+      "x-answer": {
+        "value": "ISO 8601 string",
+        "comment": "text"
+      }
+    },
+    "Ranking": {
+      "type": "object",
+      "description": "Bring items into an order.",
+      "properties": {
+        "component": {
+          "const": "Ranking"
+        },
+        "id": {
+          "type": "string",
+          "description": "Always \"root\": one component per surface"
+        },
+        "question": {
+          "type": "string",
+          "description": "The question or title"
+        },
+        "details": {
+          "type": "string",
+          "description": "Context the user needs (simple Markdown)"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 20,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "component",
+        "id",
+        "question",
+        "items"
+      ],
+      "additionalProperties": false,
+      "x-answer": {
+        "order": [
+          "labels, first = highest"
+        ],
+        "comment": "text"
+      }
+    },
+    "Info": {
+      "type": "object",
+      "description": "A note without an answer; the user acknowledges it.",
+      "properties": {
+        "component": {
+          "const": "Info"
+        },
+        "id": {
+          "type": "string",
+          "description": "Always \"root\": one component per surface"
+        },
+        "question": {
+          "type": "string",
+          "description": "The question or title"
+        },
+        "details": {
+          "type": "string",
+          "description": "Context the user needs (simple Markdown)"
+        },
+        "text": {
+          "type": "string",
+          "description": "Markdown note"
+        }
+      },
+      "required": [
+        "component",
+        "id"
+      ],
+      "additionalProperties": false,
+      "x-answer": {}
+    }
+  },
+  "functions": {},
+  "$defs": {
+    "anyComponent": {
+      "oneOf": [
+        {
+          "$ref": "#/components/Decision"
+        },
+        {
+          "$ref": "#/components/Confirm"
+        },
+        {
+          "$ref": "#/components/MultiChoice"
+        },
+        {
+          "$ref": "#/components/Checklist"
+        },
+        {
+          "$ref": "#/components/Form"
+        },
+        {
+          "$ref": "#/components/Range"
+        },
+        {
+          "$ref": "#/components/DateTime"
+        },
+        {
+          "$ref": "#/components/Ranking"
+        },
+        {
+          "$ref": "#/components/Info"
+        }
+      ]
+    },
+    "anyFunction": {
+      "oneOf": []
+    }
+  }
+}

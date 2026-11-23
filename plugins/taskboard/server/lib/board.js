@@ -5,6 +5,7 @@
  */
 
 const STATUSES = ['todo', 'in_progress', 'blocked', 'done'];
+const a2ui = require('./a2ui');
 const STATUS_ALIASES = {
   todo: 'todo', pending: 'todo', open: 'todo', backlog: 'todo', 'to do': 'todo',
   in_progress: 'in_progress', 'in-progress': 'in_progress', inprogress: 'in_progress', doing: 'in_progress', wip: 'in_progress', started: 'in_progress',
@@ -185,7 +186,7 @@ function deliver(state, q) {
 
 function qBrief(q) {
   return {
-    id: q.id, externalId: q.externalId || null, question: q.question, taskId: q.taskId, status: q.status,
+    id: q.id, externalId: q.externalId || null, kind: a2ui.legacyKind(q), question: q.question, taskId: q.taskId, status: q.status,
     decision: q.decision || null, comment: q.comment || null, answer: q.answer, dismissed: !!q.dismissed,
   };
 }
@@ -228,6 +229,88 @@ function normOption(o) {
   if (!label) return null;
   if (!type) type = ACCEPT_RE.test(label) ? 'accept' : REJECT_RE.test(label) ? 'reject' : 'neutral';
   return { label, type, recommended, description };
+}
+
+/** Summary text and A2UI action context for answers to the structured catalog components. */
+function structuredAnswer(q, decision, context, comment) {
+  const c = context && typeof context === 'object' ? context : {};
+  const spec = q.spec || {};
+  const list = (v) => (Array.isArray(v) ? v.map((x) => str(x, 300)).filter(Boolean).slice(0, 30) : []);
+  let summary;
+  let ctx;
+  if (decision === 'acknowledge') { summary = 'ACKNOWLEDGED'; ctx = {}; }
+  else switch (q.kind) {
+    case 'MultiChoice': {
+      const allowed = new Set((spec.options || []).map((o) => o.label));
+      const selected = list(c.selected).filter((x) => allowed.has(x));
+      summary = `SELECTED: ${selected.length ? selected.join(', ') : 'nothing'}`;
+      ctx = { selected };
+      break;
+    }
+    case 'Checklist': {
+      const all = (spec.items || []).map((i) => i.label);
+      const checked = list(c.checked).filter((x) => all.includes(x));
+      const unchecked = all.filter((x) => !checked.includes(x));
+      summary = `CHECKED: ${checked.length ? checked.join(', ') : 'nothing'}${unchecked.length ? ` — NOT CHECKED: ${unchecked.join(', ')}` : ''}`;
+      ctx = { checked, unchecked };
+      break;
+    }
+    case 'Form': {
+      const values = {};
+      for (const f of spec.fields || []) {
+        let v = c.values ? c.values[f.name] : undefined;
+        if (f.type === 'boolean') v = !!v;
+        else if (f.type === 'number') v = v === '' || v == null ? null : Number(v);
+        else v = v == null ? '' : str(v, 2000);
+        if (f.required && (v === '' || v == null)) throw new Error(`${f.label} is required`);
+        values[f.name] = v;
+      }
+      summary = `FORM: ${(spec.fields || []).map((f) => `${f.label}=${values[f.name] === '' || values[f.name] == null ? '—' : values[f.name]}`).join('; ')}`;
+      ctx = { values };
+      break;
+    }
+    case 'Range': {
+      const v = Number(c.value);
+      if (!Number.isFinite(v)) throw new Error('value is required');
+      const value = Math.min(spec.max, Math.max(spec.min, v));
+      summary = `VALUE: ${value}${spec.unit ? ` ${spec.unit}` : ''}`;
+      ctx = { value, ...(spec.unit ? { unit: spec.unit } : {}) };
+      break;
+    }
+    case 'DateTime': {
+      const value = str(c.value, 40);
+      if (!value) throw new Error('value is required');
+      summary = `${spec.mode === 'time' ? 'TIME' : 'DATE'}: ${value}`;
+      ctx = { value };
+      break;
+    }
+    case 'Ranking': {
+      const items = spec.items || [];
+      const order = list(c.order).filter((x) => items.includes(x));
+      for (const it of items) if (!order.includes(it)) order.push(it);
+      summary = `ORDER: ${order.map((x, i) => `${i + 1}. ${x}`).join(', ')}`;
+      ctx = { order };
+      break;
+    }
+    default: throw new Error(`no structured answer for ${q.kind || 'this question'}`);
+  }
+  const t = (comment || '').trim();
+  return { summary: `${summary}${t ? ` — comment: ${t}` : ''}`, context: { ...ctx, ...(t ? { comment: t } : {}) } };
+}
+
+/** Legacy fields kept in sync with a component, so older plugin versions still show the question. */
+function legacyFields(kind, spec) {
+  return {
+    question: spec.question,
+    details: spec.details || null,
+    recommendation: spec.recommendation || null,
+    options: kind === 'Decision' ? (spec.options || []).map(normOption).filter(Boolean) : [],
+  };
+}
+
+function findByExternal(state, project, externalId) {
+  const up = String(externalId || '').toUpperCase();
+  return Object.values(state.questions).find((q) => q.project === project && !q.hidden && ((q.externalId || '').toUpperCase() === up));
 }
 
 function questionFields(a) {
@@ -340,6 +423,31 @@ const ops = {
     return qBrief(state.questions[id]);
   },
 
+  /** A2UI createSurface with a taskboard catalog component (validated in a2ui.js). */
+  askComponent(state, a) {
+    const r = ops.ask(state, { ...a, ...legacyFields(a.kind, a.spec), options: a.kind === 'Decision' ? a.spec.options : [] });
+    const q = state.questions[r.id];
+    if (q.status === 'open') { q.kind = a.kind; q.spec = a.spec; Object.assign(q, legacyFields(a.kind, a.spec)); }
+    return { ...qBrief(q), existing: !!r.existing };
+  },
+
+  /** A2UI updateComponents: change an open question. */
+  updateComponent(state, a) {
+    const q = findByExternal(state, a.project, a.externalId);
+    if (!q) throw new Error(`surface "${a.externalId}" not found`);
+    if (q.status !== 'open') return { ...qBrief(q), existing: true };
+    Object.assign(q, { kind: a.kind, spec: a.spec }, legacyFields(a.kind, a.spec));
+    return { ...qBrief(q), existing: true };
+  },
+
+  /** A2UI deleteSurface: the agent withdraws a question. */
+  deleteSurface(state, a) {
+    const q = findByExternal(state, a.project, a.externalId);
+    if (!q) throw new Error(`surface "${a.externalId}" not found`);
+    q.hidden = true;
+    return { id: q.id, deleted: true };
+  },
+
   askMany(state, a) {
     if (!Array.isArray(a.questions) || !a.questions.length) throw new Error('questions must be a non-empty array');
     const out = [];
@@ -364,6 +472,19 @@ const ops = {
     return { questions: out };
   },
 
+  /** A2UI action messages for answered questions (by board or own ids, or all undelivered of a project). */
+  a2uiActions(state, a) {
+    const ids = (a.ids || []).map((x) => String(x).toUpperCase());
+    const out = [];
+    for (const q of Object.values(state.questions)) {
+      if (q.status !== 'answered' || (a.project && q.project !== a.project)) continue;
+      if (ids.length ? !(ids.includes(q.id) || ids.includes((q.externalId || '').toUpperCase())) : q.delivered) continue;
+      deliver(state, q);
+      out.push(a2ui.actionMessage(q));
+    }
+    return { messages: out };
+  },
+
   /** Open and answered questions of a project (for syncing a local questions file). */
   listQuestions(state, a) {
     return { questions: Object.values(state.questions).filter((q) => !a.project || q.project === a.project).map(qBrief) };
@@ -371,14 +492,23 @@ const ops = {
 
   answer(state, a) {
     const q = state.questions[resolveQid(state, a.id)];
-    const decision = ['accept', 'reject', 'option', 'answer'].includes(a.decision) ? a.decision : 'answer';
+    const decision = ['accept', 'reject', 'option', 'answer', 'submit', 'acknowledge'].includes(a.decision) ? a.decision : 'answer';
     const text = str(a.text != null ? a.text : a.answer, 4000).trim();
     const option = str(a.option, 300).trim();
+    if (decision === 'submit' || decision === 'acknowledge') {
+      const r = structuredAnswer(q, decision, a.context, text);
+      Object.assign(q, {
+        status: 'answered', decision, comment: text || null, chosenOption: null, answer: r.summary, answerContext: r.context,
+        dismissed: false, answeredAt: now(), delivered: false, deliveredAt: null,
+      });
+      return qBrief(q);
+    }
     if (decision === 'answer' && !text) throw new Error('answer text is required');
     if (decision === 'option' && !option) throw new Error('option is required');
     Object.assign(q, {
       status: 'answered', decision, comment: text || null, chosenOption: option || null,
       answer: composeAnswer(q, decision, text, option),
+      answerContext: { decision, ...(option ? { choice: option } : {}), ...(text ? { comment: text } : {}) },
       dismissed: false, answeredAt: now(), delivered: false, deliveredAt: null,
     });
     return qBrief(q);
@@ -387,7 +517,7 @@ const ops = {
   /** Reopen an answered question (the user changed their mind). */
   reopen(state, a) {
     const q = state.questions[resolveQid(state, a.id)];
-    Object.assign(q, { status: 'open', decision: null, comment: null, chosenOption: null, answer: null, dismissed: false, answeredAt: null, delivered: false, deliveredAt: null });
+    Object.assign(q, { status: 'open', decision: null, comment: null, chosenOption: null, answer: null, answerContext: null, dismissed: false, answeredAt: null, delivered: false, deliveredAt: null });
     return qBrief(q);
   },
 

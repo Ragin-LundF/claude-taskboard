@@ -241,6 +241,8 @@
   .q-text { font-size: 15px; line-height: 1.4; }
   .q-details { font-size: 13.5px; line-height: 1.5; }
   .q textarea { min-height: 90px; }
+  .q textarea.q-comment { min-height: 42px; height: 42px; }
+  .q textarea.q-comment:focus { height: 80px; }
   .q-opts .btn { height: auto; min-height: 32px; padding: 6px 12px; white-space: normal; text-align: left; line-height: 1.3; }
   .btn.opt-accept { background: var(--done); color: #06170f; }
   .btn.opt-reject { background: var(--blocked); color: #1d0609; }
@@ -286,6 +288,39 @@
   @keyframes tin { from { opacity: 0; transform: translateY(8px); } }
   .banner { display: none; align-items: center; gap: 10px; padding: 9px 22px; background: rgba(245,184,75,.12); border-bottom: 1px solid rgba(245,184,75,.35); color: #f5d38f; font-size: 13px; }
   .banner.show { display: flex; }
+  .kind { font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 0 6px; }
+  .q-md code { font-family: var(--mono); font-size: 12px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  .q-info { margin-top: 10px; font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; }
+  .q-optcard.sel { background: color-mix(in srgb, var(--oc) 16%, var(--card)); border-color: color-mix(in srgb, var(--oc) 60%, var(--line)); }
+  .q-optcard .tick { width: 16px; height: 16px; border-radius: 4px; border: 2px solid var(--oc); flex: none; display: grid; place-items: center; font-size: 11px; color: #06170f; }
+  .q-optcard.sel .tick { background: var(--oc); }
+  .q-optcard.sel .tick::after { content: "✓"; font-weight: 800; }
+  .q-check { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .q-check label { display: flex; align-items: center; gap: 10px; background: var(--card-hover); border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; cursor: pointer; font-size: 14px; }
+  .q-check label:has(input:checked) { border-color: rgba(61,220,151,.5); background: rgba(61,220,151,.07); }
+  .q-form { display: grid; grid-template-columns: max-content 1fr; gap: 8px 12px; align-items: center; margin-top: 10px; }
+  .q-form label { font-size: 13px; color: var(--muted); }
+  .q-form label .req { color: var(--blocked); margin-left: 2px; }
+  .q-form input[type=text], .q-form input[type=number], .q-form select, .q-form textarea, .q-date input { height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg-2); padding: 0 10px; outline: none; width: 100%; }
+  .q-form textarea { height: 64px; padding: 6px 10px; resize: vertical; }
+  .q-form input:focus, .q-form select:focus, .q-form textarea:focus, .q-date input:focus { border-color: var(--todo); }
+  .q-form .bool { justify-self: start; width: 18px; height: 18px; accent-color: var(--done); }
+  .q-range { margin-top: 12px; }
+  .q-range .val { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .q-range .val small { font-size: 14px; color: var(--muted); font-weight: 500; margin-left: 4px; }
+  .q-range input[type=range] { width: 100%; accent-color: var(--todo); margin-top: 6px; }
+  .q-range .scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); }
+  .q-range .recbtn { margin-left: 10px; font-size: 12px; background: transparent; border: 1px solid #ffd166; color: #ffd166; border-radius: 6px; padding: 1px 8px; cursor: pointer; }
+  .q-date { margin-top: 10px; max-width: 280px; }
+  .q-date input { color-scheme: dark; }
+  .q-rank { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; counter-reset: rk; }
+  .q-rank .rk { display: flex; align-items: center; gap: 10px; background: var(--card-hover); border: 1px solid var(--line); border-radius: 9px; padding: 6px 8px 6px 12px; font-size: 14px; }
+  .q-rank .rk b { font-family: var(--mono); color: var(--todo); width: 18px; }
+  .q-rank .rk span { flex: 1; }
+  .q-rank .rk button { width: 28px; height: 26px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg-2); color: var(--text); cursor: pointer; }
+  .q-rank .rk button:disabled { opacity: .3; cursor: default; }
+  .q-hint { font-size: 12px; color: var(--faint); margin-top: 6px; }
+  .badge.submit { background: #3d7bfd; color: #fff; } .badge.acknowledge { background: var(--bg-2); color: var(--text); border: 1px solid var(--line); }
   .q-rec { margin-top: 10px; background: rgba(124,140,255,.08); border: 1px solid rgba(124,140,255,.28); border-radius: 9px; padding: 8px 10px; font-size: 13px; white-space: pre-wrap; }
   .q-rec b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: #a8b3ff; margin-bottom: 3px; }
   .q-decide { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
@@ -359,10 +394,12 @@
   let state = { projects: {}, tasks: [], questions: [] };
   let usage = null;
   const qDrafts = {};
-  const UI_VERSION = '1.7.3';
+  const UI_VERSION = '1.8.0';
   const pending = {}; // question id -> { label, error, args }
   let showHistory = false;
   let confirmQDelete = null;
+  const qInput = {}; // question id -> draft input of structured components
+  const STRUCTURED_KINDS = ['MultiChoice', 'Checklist', 'Form', 'Range', 'DateTime', 'Ranking'];
   let prevQuestions = null;
   let dragId = null;
   let renderPending = false;
@@ -618,6 +655,7 @@
 
     const body = $('#qbody');
     const focused = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.qtext;
+    const fe = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.ff ? { q: document.activeElement.dataset.ff, name: document.activeElement.dataset.name, pos: document.activeElement.selectionStart } : null;
     const optOf = (o) => (typeof o === 'string' ? { label: o, type: 'neutral', recommended: false } : o);
     const renderOptions = (q) => {
       const opts = (q.options || []).map(optOf);
@@ -627,7 +665,47 @@
       return `<div class="q-optcards${inline ? ' inline' : ''}">${opts.map((o, i) => `<button class="q-optcard t-${esc(o.type)}${o.recommended ? ' rec' : ''}" data-qopt="${esc(q.id)}" data-i="${i}">
           <span class="ol"><i></i>${esc(o.label)}${star(o)}</span>${o.description ? `<span class="od">${esc(o.description)}</span>` : ''}</button>`).join('')}</div>`;
     };
-    const DECISION = { accept: 'Accepted', reject: 'Rejected', option: 'Chosen', answer: 'Answered', dismissed: 'Dismissed' };
+    const md = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+    const KIND_LABEL = { Decision: 'Decision', Confirm: 'Confirm', MultiChoice: 'Multiple choice', Checklist: 'Checklist', Form: 'Form', Range: 'Number', DateTime: 'Date / time', Ranking: 'Ranking', Info: 'Note' };
+    const STRUCTURED = ['MultiChoice', 'Checklist', 'Form', 'Range', 'DateTime', 'Ranking'];
+    const renderComponent = (q) => {
+      const sp = q.spec || {};
+      const inp = draftFor(q);
+      const qid = esc(q.id);
+      switch (q.kind) {
+        case 'MultiChoice': {
+          const lim = sp.min || sp.max ? `<div class="q-hint">Choose ${sp.min ? `at least ${sp.min}` : ''}${sp.min && sp.max ? ' and ' : ''}${sp.max ? `at most ${sp.max}` : ''}</div>` : '';
+          return `<div class="q-optcards${sp.options.some((o) => o.description) ? '' : ' inline'}">${sp.options.map((o, i) => `<button class="q-optcard t-neutral${o.recommended ? ' rec' : ''}${inp.selected.includes(o.label) ? ' sel' : ''}" data-mc="${qid}" data-i="${i}">
+            <span class="ol"><span class="tick"></span>${esc(o.label)}${o.recommended ? '<span class="star">★ Recommended</span>' : ''}</span>${o.description ? `<span class="od">${esc(o.description)}</span>` : ''}</button>`).join('')}</div>${lim}`;
+        }
+        case 'Checklist':
+          return `<div class="q-check">${sp.items.map((it, i) => `<label><input type="checkbox" class="check" data-cl="${qid}" data-i="${i}" ${inp.checked.includes(it.label) ? 'checked' : ''}> ${esc(it.label)}</label>`).join('')}</div>`;
+        case 'Form':
+          return `<div class="q-form">${sp.fields.map((f) => {
+            const v = inp.values[f.name];
+            const attrs = `data-ff="${qid}" data-name="${esc(f.name)}"`;
+            let ctl;
+            if (f.type === 'boolean') ctl = `<input type="checkbox" class="bool" ${attrs} ${v ? 'checked' : ''}>`;
+            else if (f.type === 'select') ctl = `<select ${attrs}><option value="">—</option>${(f.options || []).map((o) => `<option ${v === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+            else if (f.type === 'textarea') ctl = `<textarea ${attrs} placeholder="${esc(f.placeholder || '')}">${esc(v ?? '')}</textarea>`;
+            else ctl = `<input type="${f.type === 'number' ? 'number' : 'text'}" ${attrs} value="${esc(v ?? '')}" placeholder="${esc(f.placeholder || '')}">`;
+            return `<label>${esc(f.label)}${f.required ? '<span class="req">*</span>' : ''}</label>${ctl}`;
+          }).join('')}</div>`;
+        case 'Range':
+          return `<div class="q-range"><span class="val" data-rgval="${qid}">${esc(inp.value)}<small>${esc(sp.unit || '')}</small></span>${sp.recommended != null ? `<button class="recbtn" data-rgrec="${qid}">★ Recommended: ${esc(sp.recommended)}${esc(sp.unit ? ' ' + sp.unit : '')}</button>` : ''}
+            <input type="range" min="${esc(sp.min)}" max="${esc(sp.max)}" step="${esc(sp.step || 1)}" value="${esc(inp.value)}" data-rg="${qid}">
+            <div class="scale"><span>${esc(sp.min)}</span><span>${esc(sp.max)}</span></div></div>`;
+        case 'DateTime': {
+          const type = sp.mode === 'time' ? 'time' : sp.mode === 'datetime' ? 'datetime-local' : 'date';
+          return `<div class="q-date"><input type="${type}" data-dt="${qid}" value="${esc(inp.value || '')}" ${sp.min ? `min="${esc(sp.min)}"` : ''} ${sp.max ? `max="${esc(sp.max)}"` : ''}></div>`;
+        }
+        case 'Ranking':
+          return `<div class="q-rank">${inp.order.map((it, i) => `<div class="rk"><b>${i + 1}</b><span>${esc(it)}</span>
+            <button data-rkup="${qid}" data-i="${i}" ${i === 0 ? 'disabled' : ''} title="Move up">↑</button><button data-rkdown="${qid}" data-i="${i}" ${i === inp.order.length - 1 ? 'disabled' : ''} title="Move down">↓</button></div>`).join('')}</div>`;
+        default: return '';
+      }
+    };
+    const DECISION = { accept: 'Accepted', reject: 'Rejected', option: 'Chosen', answer: 'Answered', dismissed: 'Dismissed', submit: 'Submitted', acknowledge: 'Acknowledged' };
     const qHtml = (q) => {
       const task = q.taskId && state.tasks.find((t) => t.id === q.taskId);
       const meta = `<span class="tid">${esc(q.id)}</span>${q.externalId ? `<span class="xid" title="Id from the agent's list/file">${esc(q.externalId)}</span>` : ''}${q.askedBy ? `<span>${esc(q.askedBy)}</span>` : ''}${projectFilter === '__all' && state.projects[q.project] ? `<span class="tag">${esc(state.projects[q.project].name)}</span>` : ''}${task ? `<span class="tag" title="${esc(task.title)}">${esc(task.id)} · ${esc(task.title)}</span>` : ''}`;
@@ -642,27 +720,40 @@
               <div class="q-status sending"><span class="spin"></span><div>Sending “${esc(p.label)}”…</div></div></div>`;
       }
       if (q.status === 'open') {
-        const decide = q.recommendation
-          ? `<div class="q-optcards inline q-decide"><button class="q-optcard t-accept" data-qdecide="accept" data-q="${esc(q.id)}"><span class="ol"><i></i>Accept recommendation</span></button><button class="q-optcard t-reject" data-qdecide="reject" data-q="${esc(q.id)}"><span class="ol"><i></i>Reject</span></button></div>`
-          : '';
-        return `<div class="q open"><div class="q-top">${meta}<span class="q-state">${esc(ago(q.createdAt))}</span></div>
+        const kind = q.kind || 'Decision';
+        const sp = q.spec || {};
+        const head = `<div class="q open"><div class="q-top">${meta}<span class="kind">${esc(KIND_LABEL[kind] || kind)}</span><span class="q-state">${esc(ago(q.createdAt))}</span></div>
           <div class="q-text">${esc(q.question)}</div>
-          ${q.details ? `<div class="q-details">${esc(q.details)}</div>` : ''}
-          ${rec}${decide}
+          ${q.details ? `<div class="q-details q-md">${md(q.details)}</div>` : ''}`;
+        const del = `<button class="link${confirmQDelete === q.id ? ' danger-link' : ''}" data-qdelete="${esc(q.id)}" title="Remove without telling the agent (e.g. a duplicate)">${confirmQDelete === q.id ? 'Click again to delete' : 'Delete'}</button>`;
+        const dismiss = `<button class="link" data-qdismiss="${esc(q.id)}" title="Tell the agent you won't answer this">Dismiss</button>`;
+        if (kind === 'Info') {
+          return `${head}${sp.text ? `<div class="q-info q-md">${md(sp.text)}</div>` : ''}
+            <div class="q-actions">${del}<span class="spacer"></span><button class="btn sm primary" data-qack="${esc(q.id)}">Got it</button></div></div>`;
+        }
+        const comment = `<textarea class="q-comment" data-qtext="${esc(q.id)}" placeholder="Optional comment… (⌘/Ctrl+Enter submits)">${esc(qDrafts[q.id] || '')}</textarea>`;
+        if (STRUCTURED.includes(kind)) {
+          return `${head}${renderComponent(q)}${comment}
+            <div class="q-actions">${dismiss}${del}<span class="spacer"></span><button class="btn sm primary" data-qsubmit="${esc(q.id)}">Submit</button></div></div>`;
+        }
+        const decide = q.recommendation
+          ? `<div class="q-optcards inline q-decide"><button class="q-optcard t-accept" data-qdecide="accept" data-q="${esc(q.id)}"><span class="ol"><i></i>${esc(sp.acceptLabel || 'Accept recommendation')}</span></button><button class="q-optcard t-reject" data-qdecide="reject" data-q="${esc(q.id)}"><span class="ol"><i></i>${esc(sp.rejectLabel || 'Reject')}</span></button></div>`
+          : '';
+        return `${head}${rec}${decide}
           ${renderOptions(q)}
           <textarea data-qtext="${esc(q.id)}" placeholder="${q.recommendation ? 'Optional comment for Accept / Reject, or your own answer…' : 'Type an answer…'} (⌘/Ctrl+Enter sends as answer)">${esc(qDrafts[q.id] || '')}</textarea>
-          <div class="q-actions"><button class="link" data-qdismiss="${esc(q.id)}" title="Tell the agent you won't answer this">Dismiss</button><button class="link${confirmQDelete === q.id ? ' danger-link' : ''}" data-qdelete="${esc(q.id)}" title="Remove without telling the agent (e.g. a duplicate)">${confirmQDelete === q.id ? 'Click again to delete' : 'Delete'}</button><span class="spacer"></span><button class="btn sm primary" data-qsend="${esc(q.id)}">Send answer</button></div></div>`;
+          <div class="q-actions">${dismiss}${del}<span class="spacer"></span>${kind === 'Confirm' ? '' : `<button class="btn sm primary" data-qsend="${esc(q.id)}">Send answer</button>`}</div></div>`;
       }
       const d = q.decision || (q.dismissed ? 'dismissed' : 'answer');
       if (q.delivered) {
         return `<div class="q done-item"><div class="q-top">${meta}<span class="q-state">✓ received ${esc(ago(q.deliveredAt || q.answeredAt))}</span></div>
           <div class="q-text">${esc(q.question)}</div>
           <div class="q-actions"><span class="badge ${esc(d === 'option' ? 'opt-' + ((((q.options || []).map(optOf).find((o) => o.label === q.chosenOption)) || {}).type || 'neutral') : d)}">${esc(DECISION[d] || 'Answered')}</span>
-          <span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d === 'option' ? q.chosenOption || '' : q.comment || '')}</span>
+          <span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d === 'submit' ? q.answer || '' : d === 'option' ? q.chosenOption || '' : q.comment || '')}</span>
           <span class="spacer"></span><button class="link" data-qreopen="${esc(q.id)}">Reopen</button><button class="link" data-qhide="${esc(q.id)}">Hide</button></div></div>`;
       }
       const st = 'answered';
-      const shown = d === 'option' ? (q.chosenOption || '') + (q.comment ? ` — ${q.comment}` : '') : (q.comment || (d === 'answer' ? q.answer : ''));
+      const shown = d === 'submit' ? q.answer : d === 'acknowledge' ? '' : d === 'option' ? (q.chosenOption || '') + (q.comment ? ` — ${q.comment}` : '') : (q.comment || (d === 'answer' ? q.answer : ''));
       return `<div class="q waiting compact"><div class="q-top">${meta}<span class="q-state">${esc(st)} ${esc(ago(q.answeredAt))}</span></div>
         <div class="q-text">${esc(q.question)}</div>${rec}
         <div class="q-answer${q.dismissed ? ' dismissed' : ''}"><span class="badge ${esc(d === 'option' ? 'opt-' + ((((q.options || []).map(optOf).find((o) => o.label === q.chosenOption)) || {}).type || 'neutral') : d)}">${esc(DECISION[d] || 'Answered')}</span>${shown ? ` ${esc(shown)}` : ''}</div>
@@ -675,14 +766,16 @@
       (answered.length ? `<div class="section-label">Answered · waiting for the agent</div>${answered.map(qHtml).join('')}` : '') +
       (history.length ? `<button class="hist-toggle" id="histToggle">${showHistory ? '▾' : '▸'} Received by agents (${history.length})</button>${showHistory ? history.map(qHtml).join('') : ''}` : '');
     if (focused) { const ta = body.querySelector(`[data-qtext="${CSS.escape(focused)}"]`); if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = ta.value.length; } }
+    if (fe) { const el = body.querySelector(`[data-ff="${CSS.escape(fe.q)}"][data-name="${CSS.escape(fe.name)}"]`); if (el) { el.focus(); try { if (fe.pos != null) el.selectionStart = el.selectionEnd = fe.pos; } catch { /* not a text field */ } } }
   }
 
-  function sendAnswer(id, decision, text, option) {
+  function sendAnswer(id, decision, text, option, context) {
     text = (text || '').trim();
     if (decision === 'answer' && !text) { const ta = $('#qbody').querySelector(`[data-qtext="${CSS.escape(id)}"]`); if (ta) { ta.focus(); ta.placeholder = 'Type an answer first, or use Accept / Reject'; } return; }
     const q = state.questions.find((x) => x.id === id);
-    const label = decision === 'accept' ? 'Accept' + (text ? ` — ${text}` : '') : decision === 'reject' ? 'Reject' + (text ? ` — ${text}` : '') : decision === 'option' ? option + (text ? ` — ${text}` : '') : text;
-    pending[id] = { label: label.length > 140 ? label.slice(0, 140) + '…' : label, args: { id, decision, text, option }, draft: qDrafts[id] };
+    const label = decision === 'accept' ? 'Accept' + (text ? ` — ${text}` : '') : decision === 'reject' ? 'Reject' + (text ? ` — ${text}` : '') : decision === 'option' ? option + (text ? ` — ${text}` : '')
+      : decision === 'submit' ? 'your input' : decision === 'acknowledge' ? 'Got it' : text;
+    pending[id] = { label: label.length > 140 ? label.slice(0, 140) + '…' : label, args: { id, decision, text, option, context }, draft: qDrafts[id] };
     delete qDrafts[id];
     renderQuestions();
     submitPending(id, q);
@@ -702,6 +795,69 @@
       renderQuestions();
     });
   }
+  function draftFor(q) {
+    if (qInput[q.id] && qInput[q.id].kind === q.kind) return qInput[q.id];
+    const sp = q.spec || {};
+    const d = { kind: q.kind };
+    if (q.kind === 'MultiChoice') d.selected = [];
+    if (q.kind === 'Checklist') d.checked = (sp.items || []).filter((i) => i.checked).map((i) => i.label);
+    if (q.kind === 'Form') { d.values = {}; for (const f of sp.fields || []) d.values[f.name] = f.default ?? (f.type === 'boolean' ? false : ''); }
+    if (q.kind === 'Range') d.value = sp.default ?? sp.recommended ?? sp.min;
+    if (q.kind === 'DateTime') d.value = sp.default || '';
+    if (q.kind === 'Ranking') d.order = [...(sp.items || [])];
+    qInput[q.id] = d;
+    return d;
+  }
+  function contextFor(q) {
+    const d = draftFor(q);
+    const sp = q.spec || {};
+    switch (q.kind) {
+      case 'MultiChoice':
+        if (sp.min && d.selected.length < sp.min) throw new Error(`Choose at least ${sp.min}`);
+        if (sp.max && d.selected.length > sp.max) throw new Error(`Choose at most ${sp.max}`);
+        return { selected: d.selected };
+      case 'Checklist': return { checked: d.checked };
+      case 'Form':
+        for (const f of sp.fields || []) if (f.required && (d.values[f.name] === '' || d.values[f.name] == null)) throw new Error(`${f.label} is required`);
+        return { values: d.values };
+      case 'Range': return { value: Number(d.value) };
+      case 'DateTime': if (!d.value) throw new Error('Pick a value first'); return { value: d.value };
+      case 'Ranking': return { order: d.order };
+      default: return {};
+    }
+  }
+  const qById = (id) => state.questions.find((x) => x.id === id);
+  $('#qbody').addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.dataset.ff) { const d = draftFor(qById(t.dataset.ff)); d.values[t.dataset.name] = t.type === 'checkbox' ? t.checked : t.value; }
+    else if (t.dataset.rg) { const q = qById(t.dataset.rg); draftFor(q).value = Number(t.value); const v = $('#qbody').querySelector(`[data-rgval="${CSS.escape(t.dataset.rg)}"]`); if (v) v.innerHTML = `${esc(t.value)}<small>${esc((q.spec || {}).unit || '')}</small>`; }
+    else if (t.dataset.dt) draftFor(qById(t.dataset.dt)).value = t.value;
+  });
+  $('#qbody').addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.dataset.cl) {
+      const q = qById(t.dataset.cl); const d = draftFor(q); const label = q.spec.items[Number(t.dataset.i)].label;
+      d.checked = t.checked ? [...new Set([...d.checked, label])] : d.checked.filter((x) => x !== label);
+    } else if (t.dataset.ff) { const d = draftFor(qById(t.dataset.ff)); d.values[t.dataset.name] = t.type === 'checkbox' ? t.checked : t.value; }
+  });
+  $('#qbody').addEventListener('click', (e) => {
+    const el = e.target.closest && e.target.closest('[data-mc],[data-rkup],[data-rkdown],[data-rgrec],[data-qsubmit],[data-qack]');
+    if (!el) return;
+    const ds = el.dataset;
+    if (ds.mc) {
+      const q = qById(ds.mc); const d = draftFor(q); const label = q.spec.options[Number(ds.i)].label;
+      d.selected = d.selected.includes(label) ? d.selected.filter((x) => x !== label) : [...d.selected, label];
+      renderQuestions();
+    } else if (ds.rkup || ds.rkdown) {
+      const q = qById(ds.rkup || ds.rkdown); const d = draftFor(q); const i = Number(ds.i); const j = ds.rkup ? i - 1 : i + 1;
+      if (j >= 0 && j < d.order.length) { [d.order[i], d.order[j]] = [d.order[j], d.order[i]]; renderQuestions(); }
+    } else if (ds.rgrec) { const q = qById(ds.rgrec); draftFor(q).value = q.spec.recommended; renderQuestions(); }
+    else if (ds.qsubmit) {
+      const q = qById(ds.qsubmit);
+      try { const ctx = contextFor(q); sendAnswer(q.id, 'submit', draftOf(q.id), null, ctx); delete qInput[q.id]; }
+      catch (err) { toast(err.message, 'err'); }
+    } else if (ds.qack) sendAnswer(ds.qack, 'acknowledge', '', null, {});
+  });
   const draftOf = (id) => { const ta = $('#qbody').querySelector(`[data-qtext="${CSS.escape(id)}"]`); return ta ? ta.value : ''; };
   $('#questionsBtn').addEventListener('click', () => { $('#drawer').classList.remove('open'); $('#qdrawer').classList.toggle('open'); });
   $('#closeQ').addEventListener('click', () => $('#qdrawer').classList.remove('open'));
@@ -734,7 +890,12 @@
   })();
   $('#qbody').addEventListener('input', (e) => { if (e.target.dataset.qtext) qDrafts[e.target.dataset.qtext] = e.target.value; });
   $('#qbody').addEventListener('keydown', (e) => {
-    if (e.target.dataset.qtext && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendAnswer(e.target.dataset.qtext, 'answer', e.target.value); }
+    if (e.target.dataset.qtext && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      const q = qById(e.target.dataset.qtext);
+      if (q && STRUCTURED_KINDS.includes(q.kind)) { try { sendAnswer(q.id, 'submit', e.target.value, null, contextFor(q)); delete qInput[q.id]; } catch (err) { toast(err.message, 'err'); } }
+      else sendAnswer(e.target.dataset.qtext, 'answer', e.target.value);
+    }
   });
   $('#qbody').addEventListener('click', (e) => {
     const d = e.target.dataset;

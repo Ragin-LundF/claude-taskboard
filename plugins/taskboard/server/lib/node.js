@@ -11,6 +11,7 @@ const http = require('http');
 const path = require('path');
 const { PORT, HOST, HOME, BOARD_FILE, APP_ID } = require('./config');
 const board = require('./board');
+const a2ui = require('./a2ui');
 const { UsageTracker } = require('./usage');
 const { fetchPlanLimits } = require('./planlimits');
 const API_POLL_MS = Number(process.env.TASKBOARD_LIMITS_POLL_MS || 150000);
@@ -220,7 +221,7 @@ class BoardNode {
   }
 
   publicState() {
-    return { serverVersion: VERSION, rev: this.state.rev, projects: this.state.projects, tasks: Object.values(this.state.tasks), questions: Object.values(this.state.questions || {}).map((q) => ({ ...q, options: (q.options || []).map(board.normOption).filter(Boolean) })), limits: board.effectiveLimits(this.state), bridge: this.state.bridge || null,
+    return { serverVersion: VERSION, rev: this.state.rev, projects: this.state.projects, tasks: Object.values(this.state.tasks), questions: Object.values(this.state.questions || {}).map((q) => ({ ...q, kind: a2ui.legacyKind(q), options: (q.options || []).map(board.normOption).filter(Boolean) })), limits: board.effectiveLimits(this.state), bridge: this.state.bridge || null,
       limitsSources: {
         source: (this.state.limitsConfig && this.state.limitsConfig.source) || 'statusline',
         statusline: ((this.state.limitsBySource || {}).statusline || this.state.limits || {}).updatedAt || null,

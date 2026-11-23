@@ -8,8 +8,9 @@ const readline = require('readline');
 const { spawn } = require('child_process');
 const { detectProject, PORT, HOME } = require('./lib/config');
 const { BoardNode } = require('./lib/node');
+const a2ui = require('./lib/a2ui');
 
-const VERSION = '1.7.3';
+const VERSION = '1.8.0';
 const SUPPORTED_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const project = detectProject(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const node = new BoardNode();
@@ -199,10 +200,42 @@ const TOOLS = [
     },
   },
   {
+    name: 'board_ui',
+    description: `Ask the user on the taskboard with A2UI v1.0 messages and the taskboard catalog (catalogId "${a2ui.CATALOG_ID}"). One surface per question: {"version":"1.0","createSurface":{"surfaceId":"<your question id>","catalogId":"…","components":[{"id":"root","component":"<Component>",…}],"metadata":{"taskId":"T-3","askedBy":"Bob"}}}. Components: Decision (question, details, recommendation, options[{label,type:accept|neutral|reject,recommended,description}]), Confirm (question, recommendation), MultiChoice (question, options[{label,description,recommended}]), Checklist (question, items[{label}]), Form (question, fields[{name,label,type:text|textarea|number|select|boolean,options,required}]), Range (question, min, max, step, unit, recommended), DateTime (question, mode:date|time|datetime), Ranking (question, items[]), Info (question, text; no answer). updateComponents changes an open question, deleteSurface withdraws it. Re-sending a surfaceId never duplicates; answered ones return their answer. Answers arrive automatically after your next tool call as a short summary; board_answers with format "a2ui" returns the A2UI action messages.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messages: { type: 'array', items: { type: 'object' }, description: 'A2UI v1.0 agent-to-renderer messages (createSurface / updateComponents / deleteSurface)' },
+        askedBy: { type: 'string', description: 'Default asker name for all surfaces' },
+        project: projectProp,
+      },
+      required: ['messages'],
+    },
+    run: async (a) => {
+      let list;
+      try {
+        list = a2ui.messagesToOps(a.messages, { ...withProject(a), askedBy: a.askedBy, askerPid: process.ppid });
+      } catch (e) {
+        throw new Error(`${e.code || 'VALIDATION_FAILED'}: ${e.message}`);
+      }
+      const lines = [];
+      for (const o of list) {
+        const r = await node.op(o.op, o.args);
+        if (o.op === 'deleteSurface') { lines.push(`${o.surfaceId}: withdrawn (${r.id})`); continue; }
+        lines.push(`${o.surfaceId} → ${r.id} ${r.kind}: ${r.status === 'answered' ? `already answered → ${r.answer}` : r.existing ? 'open (updated)' : 'open (new)'}`);
+      }
+      return `${lines.join('\n')}\nBoard: ${node.url}. Answers arrive automatically after your next tool call.`;
+    },
+  },
+  {
     name: 'board_answers',
     description: 'Fetch answers the user gave on the taskboard that you have not received yet (with your question ids and the decision: ACCEPTED / REJECTED / CHOSE / free text). Pass ids (board ids like "Q-3" or your own ids like "Q148") to get the status and answer of specific questions, even if they were delivered before (e.g. to a previous session). Use includeOpen to see which questions are still waiting.',
-    inputSchema: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } }, includeOpen: { type: 'boolean' } } },
+    inputSchema: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } }, includeOpen: { type: 'boolean' }, format: { type: 'string', enum: ['text', 'a2ui'], description: 'a2ui returns A2UI v1.0 action messages (JSON lines) instead of short summaries' } } },
     run: async (a) => {
+      if (a.format === 'a2ui') {
+        const r = await node.op('a2uiActions', { ids: a.ids, project: project.path });
+        return r.messages.length ? r.messages.map((m) => JSON.stringify(m)).join('\n') : 'No answered questions.';
+      }
       if (Array.isArray(a.ids) && a.ids.length) {
         const r = await node.op('questionStatus', { ids: a.ids, project: project.path });
         return r.questions.map((q) => (q.missing ? `${q.id}: not found on the board`

@@ -137,6 +137,49 @@ the board. Run `/kanban-questions [file]` to push questions on demand.
 
 The panel can be resized by dragging its left edge, or switched to **Wide** (two columns).
 
+### More answer types (A2UI)
+
+For questions that need more than one choice or free text, agents use
+[A2UI](https://github.com/a2ui-project/a2ui) v1.0 messages with the **taskboard catalog**
+([`plugins/taskboard/catalog/taskboard-catalog-v1.json`](plugins/taskboard/catalog/taskboard-catalog-v1.json)).
+The catalog contains only prepared, high-level components: the agent sends one component per
+question with its content, and the board renders it. That keeps agent messages about as small as
+a plain question (no layout tokens), and anything outside the catalog is rejected with a clear
+error.
+
+![A2UI answer types: multiple choice, checklist, form, number](docs/screenshots/questions-a2ui.png)
+
+| Component | Use for | You answer with |
+|---|---|---|
+| Decision | pick one of typed options | option cards (green / blue / red, recommended highlighted) |
+| Confirm | a recommendation | Accept / Reject (+ comment) |
+| MultiChoice | pick several | toggle cards |
+| Checklist | confirm points | checkboxes |
+| Form | a few values at once | text, number, dropdown, yes/no fields |
+| Range | a number | slider with unit and recommended value |
+| DateTime | a date or time | date / time picker |
+| Ranking | an order | move items up and down |
+| Info | a note without an answer | **Got it** |
+
+Example message (one surface per question, `surfaceId` = the agent's question id):
+
+```json
+{"version": "1.0", "createSurface": {
+  "surfaceId": "Q-31",
+  "catalogId": "https://github.com/Ragin-LundF/claude-taskboard/catalog/v1",
+  "components": [{"id": "root", "component": "MultiChoice",
+    "question": "Which payment methods at launch?",
+    "options": [{"label": "Card", "recommended": true}, {"label": "Apple Pay"}, {"label": "PayPal"}]}],
+  "metadata": {"taskId": "T-1", "askedBy": "Alice"}}}
+```
+
+Answers go back as standard A2UI `action` messages (`name`, `surfaceId`, `sourceComponentId`,
+`timestamp`, `context`). To save tokens, agents receive them as one short line by default
+(`SELECTED: Card, Apple Pay`); `board_answers` with `format: "a2ui"` returns the raw messages.
+
+Board files stay compatible in both directions: older versions show these questions as plain
+questions with a text field and keep the extra fields when saving.
+
 ## Usage and plan limits
 
 The header always shows what is left of your **5-hour** and **weekly** plan limits, also when the
@@ -215,6 +258,7 @@ Claude session 3 ─ MCP server (stdio) ─┘
 | `board_start`, `board_finish`, `board_update` | Claim with an assignee, finish with a note, change status (incl. *blocked*) |
 | `board_ask` | Ask one question (waits for the answer by default) |
 | `board_ask_many` | Push a list of questions with ids, recommendations and typed options |
+| `board_ui` | Ask with A2UI v1.0 messages and the taskboard catalog (all answer types) |
 | `board_answers` | Fetch answers that have not been delivered yet |
 | `board_usage` | Plan limits and token usage as text |
 
@@ -274,6 +318,8 @@ plugins/taskboard/
   server/lib/board.js                board state and operations
   server/lib/usage.js                token usage from session logs
   server/lib/planlimits.js           Usage API source for plan limits
+  server/lib/a2ui.js                 A2UI v1.0 messages, catalog validation, action messages
+  catalog/taskboard-catalog-v1.json  the A2UI component catalog (JSON Schema)
   ui/index.html                      the board (single file, no build step)
   skills/taskboard/SKILL.md          how agents use the board
   commands/                          /kanban, /kanban-questions, /taskboard-limits
