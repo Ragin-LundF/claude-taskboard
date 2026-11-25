@@ -10,7 +10,7 @@ const { detectProject, PORT, HOME } = require('./lib/config');
 const { BoardNode } = require('./lib/node');
 const a2ui = require('./lib/a2ui');
 
-const VERSION = '1.8.3';
+const VERSION = '1.9.0';
 const SUPPORTED_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const project = detectProject(process.env.CLAUDE_PROJECT_DIR || process.cwd());
 const node = new BoardNode();
@@ -228,6 +228,12 @@ const TOOLS = [
     },
   },
   {
+    name: 'board_wait',
+    description: 'Wait for the user\'s answers to your open board questions without using tokens. Call it ONCE when you have pushed questions and have nothing else to do, instead of ending your turn: it returns as soon as an answer arrives (then continue the work) or after the timeout. Never call it in a loop; if it says waiting is not possible or nothing arrived, end your turn — answers then reach you automatically on your next turn.',
+    inputSchema: { type: 'object', properties: { timeoutMinutes: { type: 'number', description: 'Default 25, max 55' }, askedBy: { type: 'string' } } },
+    run: async (a, ctx) => boardWait(a, ctx),
+  },
+  {
     name: 'board_answers',
     description: 'Fetch answers the user gave on the taskboard that you have not received yet (with your question ids and the decision: ACCEPTED / REJECTED / CHOSE / free text). Pass ids (board ids like "Q-3" or your own ids like "Q148") to get the status and answer of specific questions, even if they were delivered before (e.g. to a previous session). Use includeOpen to see which questions are still waiting.',
     inputSchema: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } }, includeOpen: { type: 'boolean' }, format: { type: 'string', enum: ['text', 'a2ui'], description: 'a2ui returns A2UI v1.0 action messages (JSON lines) instead of short summaries' } } },
@@ -291,6 +297,82 @@ function formatUsage(u) {
   return out.join('\n');
 }
 
+// ------------------------------------------------------------------ board_wait
+
+let clientInfo = null;
+let activeWait = null;
+let lastTimeoutAt = 0;
+let waitSeq = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const CUT_WINDOW_MS = 5 * 60000; // apps cut long tool calls after fixed short times; later ends are the user stopping
+
+async function recordCut(client, started) {
+  const after = Date.now() - started;
+  if (after >= CUT_WINDOW_MS) return null;
+  return node.op('waitCut', { client, afterMs: after });
+}
+
+/** Identifies the host app, so a host that cuts long tool calls is remembered across sessions. */
+function clientKey() {
+  const host = process.env.ORCA_APP_VERSION ? 'orca' : (process.env.CLAUDE_CODE_ENTRYPOINT || 'unknown');
+  return `${(clientInfo && clientInfo.name) || 'client'} · ${host}`;
+}
+
+async function boardWait(a, ctx) {
+  const client = clientKey();
+  const off = (sup) => `board_wait is turned off for this app (${client}) because it ended the last waits early (after ~${sup.lastCutAfterSec}s). Do not call board_wait again. End your turn now; answers reach you automatically on your next turn.`;
+  let sup = await node.op('waitSupportGet', { client });
+  if (sup && sup.disabled) return off(sup);
+  if (Date.now() - lastTimeoutAt < 120000) return 'You already waited the full time without an answer. Do not wait again: end your turn now; answers reach you automatically on your next turn.';
+  if (activeWait) {
+    // the previous wait is still running: the app gave up on it without telling us
+    activeWait.abandoned = true;
+    sup = await recordCut(client, activeWait.started);
+    if (sup && sup.disabled) return off(sup);
+  }
+  const pids = [process.ppid];
+  const fetchAnswers = async () => {
+    const r = await node.op('takeAnswers', { pids, project: project.path });
+    return r.answers.map((q) => `- ${q.id}${q.externalId ? ` [${q.externalId}]` : ''} "${q.question}" → ${q.answer}`).join('\n');
+  };
+  let pend = await node.op('pendingFor', { pids, project: project.path });
+  if (pend.answered) return `The user answered on the taskboard:\n${await fetchAnswers()}\nContinue the work.`;
+  if (!pend.open) return 'You have no open questions on the board, so there is nothing to wait for. Continue the work or end your turn.';
+
+  const minutes = Math.min(Math.max(Number(a.timeoutMinutes) || 25, process.env.TASKBOARD_TEST ? 0.02 : 1), 55);
+  const me = { id: `W-${process.pid}-${++waitSeq}`, started: Date.now(), abandoned: false };
+  activeWait = me;
+  await node.op('waitStart', { id: me.id, pid: process.pid, askerPid: process.ppid, project: project.path, askedBy: a.askedBy, until: new Date(me.started + minutes * 60000).toISOString() });
+  let lastProgress = Date.now();
+  try {
+    while (Date.now() - me.started < minutes * 60000) {
+      await sleep(1500);
+      if (me.abandoned) return 'This wait was replaced by a newer one.';
+      if (ctx.cancelled) {
+        if (Date.now() - me.started < minutes * 60000 * 0.9) await recordCut(client, me.started);
+        return 'Waiting was cancelled.';
+      }
+      pend = await node.op('pendingFor', { pids, project: project.path });
+      if (pend.answered) {
+        const text = await fetchAnswers();
+        await node.op('waitOk', { client, afterMs: Date.now() - me.started });
+        return `The user answered on the taskboard:\n${text}\nContinue the work.`;
+      }
+      if (!pend.open) return 'No open questions are left (they were answered and already delivered to you, or withdrawn). Continue the work.';
+      if (ctx.progressToken != null && Date.now() - lastProgress > 15000) {
+        lastProgress = Date.now();
+        send({ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken: ctx.progressToken, progress: Math.round((Date.now() - me.started) / 1000), message: 'waiting for the user on the taskboard' } });
+      }
+    }
+    lastTimeoutAt = Date.now();
+    await node.op('waitOk', { client, afterMs: Date.now() - me.started });
+    return `No answer within ${minutes} min. End your turn now and do not call board_wait again this turn; answers reach you automatically on your next turn.`;
+  } finally {
+    if (activeWait === me) activeWait = null;
+    await node.op('waitEnd', { id: me.id }).catch(() => {});
+  }
+}
+
 function withProject(a) {
   if (a.project) return { ...a, projectName: undefined };
   return { ...a, project: project.path, projectName: project.name };
@@ -350,6 +432,7 @@ async function handle(msg) {
     switch (method) {
       case 'initialize': {
         const requested = params && params.protocolVersion;
+        clientInfo = (params && params.clientInfo) || null;
         result = {
           protocolVersion: SUPPORTED_PROTOCOLS.includes(requested) ? requested : SUPPORTED_PROTOCOLS[0],
           capabilities: { tools: {} },
@@ -401,8 +484,22 @@ rl.on('line', (line) => {
   handle(msg);
 });
 
-function shutdown() {
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  if (activeWait) {
+    // the session ended in the middle of a wait: the app gave up on the tool call
+    await Promise.race([recordCut(clientKey(), activeWait.started).catch(() => {}), sleep(800)]);
+  }
+  const wasLeader = node.role === 'leader';
   node.shutdown();
+  // keep the board alive for a while after the last session (no tokens involved); TASKBOARD_LINGER_MIN=0 turns it off
+  if (wasLeader && Number(process.env.TASKBOARD_LINGER_MIN ?? 30) > 0) {
+    try {
+      spawn(process.execPath, [require('path').join(__dirname, 'keeper.js')], { detached: true, stdio: 'ignore', env: process.env }).unref();
+    } catch { /* best effort */ }
+  }
   process.exit(0);
 }
 rl.on('close', shutdown);

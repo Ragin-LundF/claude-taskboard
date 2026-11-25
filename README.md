@@ -4,7 +4,7 @@
 cards, split work into subtasks, show who is working on what, ask you questions you answer in the
 browser, and keep an eye on your token usage and plan limits.
 
-It runs **only while Claude Code runs**: no daemon, no global server, no account, no npm install.
+It runs **only while Claude Code runs** (plus a short grace period so you can still answer): no daemon, no global server, no account, no npm install.
 
 ![Taskboard with tasks in To Do, In Progress, Blocked and Finished](docs/screenshots/board.png)
 
@@ -124,8 +124,21 @@ the agent has picked it up you see **✓ received** and the question moves to th
 Agents see your answer **right after their next step** (tool call), at the end of their turn, or
 with your next message to them; an agent waiting in `board_ask` gets it immediately. This costs
 **no tokens while nothing is waiting**: the board keeps a marker file only while answers wait for
-pickup, and the hook checks it with a single file test (~2 ms) before doing anything else. An
-agent that has already stopped can't be woken up; send it any message to hand the answer over.
+pickup, and the hook checks it with a single file test (~2 ms) before doing anything else.
+
+**Agents that wait for you.** When an agent has pushed its questions and has nothing else to do,
+it calls `board_wait` instead of stopping. The call simply stays open — no model runs and no
+tokens are used — and returns the moment you answer, so the agent continues by itself. The
+questions panel shows *"Alice is waiting for your answer"* and the cards get an *agent waiting*
+chip. The wait ends after 25 minutes at the latest (then the agent ends its turn and gets your
+answers with your next message, as before).
+
+Some apps end long tool calls early. The board notices this: if an app cuts a wait short twice in
+a row (within the first 5 minutes), `board_wait` turns itself off for that app and only answers
+"end your turn", so an agent can never loop on it. The panel shows per app whether waiting works
+(*✓ works, longest wait 18 min* or *✕ off — ended waits after ~60s*) with a **Try again** button.
+An agent that has already ended its turn can't be woken up; send it any message to hand the
+answer over.
 
 The agent receives the decision together with its own question id, for example
 `Q-1 [Q-12] → CHOSE: Per plan (accept) — your recommended option`, and writes it back to its
@@ -230,8 +243,12 @@ Claude session 3 ─ MCP server (stdio) ─┘
 - Claude Code starts the plugin's MCP server with each session and stops it when the session
   ends. The first one to get the port serves the board; the others forward to it.
 - If the leader's session ends, another session takes over within about 2 seconds and reloads the
-  state from disk; the browser reconnects by itself. When the last session ends, nothing is left
-  running.
+  state from disk; the browser reconnects by itself.
+- When the last session ends, a small keeper process keeps the board open for a while, so you can
+  still answer questions (they are saved and delivered when the agent continues). It uses no
+  tokens, stops after 30 minutes without anyone using the board (4 hours at most), and hands over
+  immediately when a new session starts. Set `TASKBOARD_LINGER_MIN=0` to stop the board together
+  with the last session.
 - A session with a newer plugin version takes the board over from an older one automatically.
 - Hooks keep the board current: they mirror agents' internal task lists, deliver your answers to
   the session that asked, and remind agents to push their questions.
@@ -259,6 +276,7 @@ Claude session 3 ─ MCP server (stdio) ─┘
 | `board_ask` | Ask one question (waits for the answer by default) |
 | `board_ask_many` | Push a list of questions with ids, recommendations and typed options |
 | `board_ui` | Ask with A2UI v1.0 messages and the taskboard catalog (all answer types) |
+| `board_wait` | Wait for answers without using tokens; returns as soon as you answer |
 | `board_answers` | Fetch answers that have not been delivered yet |
 | `board_usage` | Plan limits and token usage as text |
 
@@ -276,10 +294,12 @@ the same values.
 | `TASKBOARD_USAGE` | on | `0` turns off the token usage panel |
 | `TASKBOARD_LIMITS_POLL_MS` | `150000` | Poll interval for the Usage API source |
 | `TASKBOARD_AGENT_NAME` | `Claude <session>` | Assignee name for mirrored cards |
+| `TASKBOARD_LINGER_MIN` | `30` | Keep the board open this long after the last session ends while nobody uses it (`0` = stop immediately) |
+| `TASKBOARD_LINGER_MAX_MIN` | `240` | Upper limit for keeping the board open after the last session |
 
 ## Troubleshooting
 
-**The board doesn't open.** It only runs while a Claude Code session with the plugin is running.
+**The board doesn't open.** It only runs while a Claude Code session with the plugin is running (and up to 30 minutes after the last one ended).
 Check with `/mcp` that the `taskboard` server is connected, and that `node --version` is 18 or
 newer.
 

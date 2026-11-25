@@ -545,6 +545,68 @@ const ops = {
 
   cleanup() { return { __noChange: true }; },
 
+  // ---- board_wait: agents waiting for answers without using tokens ----
+
+  /** Answered, undelivered questions for a session (same matching as takeAnswers, read-only). */
+  pendingFor(state, a) {
+    const pids = new Set((a.pids || []).map(Number).filter(Boolean));
+    const dead = new Set((a.deadPids || []).map(Number));
+    let answered = 0;
+    let open = 0;
+    for (const q of Object.values(state.questions)) {
+      if (q.hidden) continue;
+      const sameProject = a.project && q.project === a.project;
+      const mine = q.askerPid && pids.size ? (pids.has(q.askerPid) || (dead.has(q.askerPid) && sameProject)) : sameProject;
+      if (!mine) continue;
+      if (q.status === 'answered' && !q.delivered) answered++;
+      else if (q.status === 'open') open++;
+    }
+    return { answered, open };
+  },
+
+  waitStart(state, a) {
+    state.waiters = state.waiters || {};
+    state.waiters[a.id] = { id: a.id, pid: Number(a.pid) || null, askerPid: Number(a.askerPid) || null, project: a.project, askedBy: str(a.askedBy, 80) || null, since: now(), until: a.until || null };
+    return { ok: true };
+  },
+
+  waitEnd(state, a) {
+    if (!state.waiters || !state.waiters[a.id]) return { __noChange: true };
+    delete state.waiters[a.id];
+    return { ok: true };
+  },
+
+  /** A client ended a board_wait early. Two early cuts in a row disable waiting for that client. */
+  waitCut(state, a) {
+    state.waitSupport = state.waitSupport || {};
+    const w = state.waitSupport[a.client] || { cuts: 0 };
+    w.cuts = (w.cuts || 0) + 1;
+    w.lastCutAfterSec = Math.round(Number(a.afterMs || 0) / 1000);
+    w.lastCutAt = now();
+    if (w.cuts >= 2) w.disabled = true;
+    state.waitSupport[a.client] = w;
+    return { ...w };
+  },
+
+  /** A board_wait ran normally (answer or full timeout): the client supports waiting. */
+  waitOk(state, a) {
+    state.waitSupport = state.waitSupport || {};
+    const w = state.waitSupport[a.client] || {};
+    const longest = Math.max(w.longestSec || 0, Math.round(Number(a.afterMs || 0) / 1000));
+    state.waitSupport[a.client] = { cuts: 0, disabled: false, longestSec: longest, lastOkAt: now() };
+    return { ok: true };
+  },
+
+  waitReset(state, a) {
+    state.waitSupport = state.waitSupport || {};
+    if (a.client) delete state.waitSupport[a.client]; else state.waitSupport = {};
+    return { ok: true };
+  },
+
+  waitSupportGet(state, a) {
+    return (state.waitSupport || {})[a.client] || null;
+  },
+
   markDelivered(state, a) {
     const q = state.questions[resolveQid(state, a.id)];
     deliver(state, q);
@@ -712,7 +774,7 @@ const ops = {
   },
 };
 
-const READ_ONLY = new Set(['list', 'getQuestion', 'limitsGet', 'listQuestions', 'projectActive']);
+const READ_ONLY = new Set(['list', 'getQuestion', 'limitsGet', 'listQuestions', 'projectActive', 'pendingFor', 'waitSupportGet']);
 
 function apply(state, op, args) {
   const fn = ops[op];

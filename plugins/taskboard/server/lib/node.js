@@ -53,7 +53,10 @@ function request(method, urlPath, body, timeoutMs = 2000) {
 }
 
 class BoardNode {
-  constructor() {
+  /** opts.keeper: this process only keeps the board alive after the last session ended. */
+  constructor(opts = {}) {
+    this.keeper = !!opts.keeper;
+    this.lastActivity = Date.now();
     this.role = 'starting'; // leader | follower | conflict
     this.server = null;
     this.state = null;
@@ -100,7 +103,7 @@ class BoardNode {
     if (!won) {
       // a session with a newer plugin version takes the board over from an older leader
       const info = await this.leaderInfo();
-      if (info && newer(VERSION, info.version)) {
+      if (info && !this.keeper && (info.keeper || newer(VERSION, info.version))) {
         try {
           const r = await request('POST', '/api/handover', { version: VERSION }, 3000);
           if (r.status === 200) {
@@ -137,6 +140,7 @@ class BoardNode {
     this.role = 'leader';
     this.conflict = null;
     this.state = this.load();
+    this.state.waiters = {}; // runtime only
     log('leading board at', this.url);
     try { const { changed } = board.apply(this.state, 'cleanup', {}); if (changed) this.scheduleSave(); } catch (e) { log('cleanup failed', e.message); }
     this.updateAnswerMarker();
@@ -222,6 +226,8 @@ class BoardNode {
 
   publicState() {
     return { serverVersion: VERSION, rev: this.state.rev, projects: this.state.projects, tasks: Object.values(this.state.tasks), questions: Object.values(this.state.questions || {}).map((q) => ({ ...q, kind: a2ui.legacyKind(q), options: (q.options || []).map(board.normOption).filter(Boolean) })), limits: board.effectiveLimits(this.state), bridge: this.state.bridge || null,
+      waiters: Object.values(this.state.waiters || {}).filter((w) => { try { process.kill(w.pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }),
+      waitSupport: this.state.waitSupport || {},
       limitsSources: {
         source: (this.state.limitsConfig && this.state.limitsConfig.source) || 'statusline',
         statusline: ((this.state.limitsBySource || {}).statusline || this.state.limits || {}).updatedAt || null,
@@ -253,7 +259,7 @@ class BoardNode {
 
   applyLocal(op, args) {
     if (op === 'usage') return this.usageSummary || { hasData: false, pending: true };
-    if (op === 'takeAnswers') args = { ...args, deadPids: this.deadAskerPids() };
+    if (op === 'takeAnswers' || op === 'pendingFor') args = { ...args, deadPids: this.deadAskerPids() };
     const { result, changed } = board.apply(this.state, op, args);
     if (changed) this.updateAnswerMarker();
     if (op === 'setLimitsSource') { clearInterval(this.apiTimer); this.apiTimer = null; this.updateApiPolling(); }
@@ -289,8 +295,9 @@ class BoardNode {
     const url = new URL(req.url, this.url);
 
     if (req.method === 'GET' && url.pathname === '/api/health') {
-      return this.json(res, 200, { app: APP_ID, pid: process.pid, rev: this.state.rev, version: VERSION });
+      return this.json(res, 200, { app: APP_ID, pid: process.pid, rev: this.state.rev, version: VERSION, keeper: this.keeper });
     }
+    if ((req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) || (req.method === 'POST' && url.pathname === '/api/op')) this.lastActivity = Date.now();
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       const html = fs.readFileSync(UI_FILE);
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-frame-options': 'DENY' });
@@ -310,7 +317,7 @@ class BoardNode {
     if (req.method === 'POST' && url.pathname === '/api/handover') {
       if (req.headers['x-taskboard'] !== '1' || req.headers.origin) return this.json(res, 403, { error: 'forbidden' });
       const body = JSON.parse((await readBody(req)) || '{}');
-      if (!newer(body.version, VERSION)) return this.json(res, 409, { error: 'not newer' });
+      if (!this.keeper && !newer(body.version, VERSION)) return this.json(res, 409, { error: 'not newer' });
       this.json(res, 200, { ok: true });
       setImmediate(() => this.stepDown(body.version));
       return undefined;
@@ -348,6 +355,7 @@ class BoardNode {
     this.server = null;
     this.state = null;
     this.role = 'starting'; // the watch loop / next op finds the new leader
+    if (this.keeper) { log('keeper handed the board to a session'); setTimeout(() => process.exit(0), 200); }
   }
 
   shutdown() {

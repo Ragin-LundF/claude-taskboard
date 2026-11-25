@@ -63,6 +63,11 @@ by project (the git root of the session).
      question text returns the existing entry (with its answer if it has one) instead of a new one.
    - don't stop and wait for answers you don't need yet: keep working on other cards, or mark
      the dependent card blocked.
+   - when you have pushed questions and **nothing else is left to do**, call `board_wait` once
+     instead of ending your turn. It uses no tokens while it waits and returns as soon as the user
+     answers; then continue the work. **Call it at most once per turn and never in a loop.** If it
+     says nothing arrived, that waiting is turned off, or that there is nothing to wait for, end
+     your turn: answers reach you automatically on your next turn.
    - subagents can ask too; tell them to pass their own name as `askedBy`.
    Hooks remind you when you write a questions file or end a turn with questions in the chat.
 10. **Other answer types (A2UI)** — when a question needs more than one choice or free text, use

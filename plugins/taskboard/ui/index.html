@@ -326,6 +326,17 @@
   .q-rank .rk button:disabled { opacity: .3; cursor: default; }
   .q-hint { font-size: 12px; color: var(--faint); margin-top: 6px; }
   .badge.submit { background: #3d7bfd; color: #fff; } .badge.acknowledge { background: var(--bg-2); color: var(--text); border: 1px solid var(--line); }
+  .q-wait { display: flex; align-items: center; gap: 10px; background: rgba(61,220,151,.08); border: 1px solid rgba(61,220,151,.35); color: #9fe3c4; border-radius: 10px; padding: 9px 12px; font-size: 13px; }
+  .q-wait .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--done); animation: pulse 1.4s infinite; flex: none; }
+  .q-wait small { color: var(--muted); display: block; font-size: 12px; }
+  .wchip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: #9fe3c4; border: 1px solid rgba(61,220,151,.4); border-radius: 6px; padding: 0 6px; }
+  .wchip i { width: 6px; height: 6px; border-radius: 50%; background: var(--done); animation: pulse 1.4s infinite; }
+  .wsupport { font-size: 12px; color: var(--faint); border-top: 1px solid var(--line-soft); padding-top: 10px; margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
+  .wsupport .row { display: flex; gap: 8px; align-items: center; }
+  .wsupport .off { color: #ffb3bf; }
+  .wsupport .ok { color: #9fe3c4; }
+  .wsupport button { background: transparent; border: 1px solid var(--line); color: var(--text); border-radius: 6px; font-size: 12px; padding: 2px 8px; cursor: pointer; }
+  .wsupport button:hover { border-color: var(--accent, #7c83ff); }
   .q-rec { margin-top: 10px; background: rgba(124,140,255,.08); border: 1px solid rgba(124,140,255,.28); border-radius: 9px; padding: 8px 10px; font-size: 13px; white-space: pre-wrap; }
   .q-rec b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: #a8b3ff; margin-bottom: 3px; }
   .q-decide { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
@@ -399,7 +410,7 @@
   let state = { projects: {}, tasks: [], questions: [] };
   let usage = null;
   const qDrafts = {};
-  const UI_VERSION = '1.8.3';
+  const UI_VERSION = '1.9.0';
   const pending = {}; // question id -> { label, error, args }
   let showHistory = false;
   let confirmQDelete = null;
@@ -676,7 +687,8 @@
     const answered = waiting;
     const btn = $('#questionsBtn');
     const toAnswer = open.filter((q) => !pending[q.id]).length;
-    btn.textContent = toAnswer ? `Questions (${toAnswer})` : waiting.length ? `Questions · ${waiting.length} sent` : 'Questions';
+    const agentsWaiting = (state.waiters || []).length;
+    btn.textContent = (toAnswer ? `Questions (${toAnswer})` : waiting.length ? `Questions · ${waiting.length} sent` : 'Questions') + (agentsWaiting ? ' · agent waiting' : '');
     btn.classList.toggle('has', toAnswer > 0);
     const allOpen = (state.questions || []).filter((q) => q.status === 'open' && !pending[q.id]).length;
     document.title = (allOpen ? `(${allOpen}) ` : '') + 'Taskboard';
@@ -750,7 +762,8 @@
       if (q.status === 'open') {
         const kind = q.kind || 'Decision';
         const sp = q.spec || {};
-        const head = `<div class="q open"><div class="q-top">${meta}<span class="kind">${esc(KIND_LABEL[kind] || kind)}</span><span class="q-state">${esc(ago(q.createdAt))}</span></div>
+        const waiting = (state.waiters || []).some((w) => w.askerPid && w.askerPid === q.askerPid);
+        const head = `<div class="q open"><div class="q-top">${meta}<span class="kind">${esc(KIND_LABEL[kind] || kind)}</span>${waiting ? '<span class="wchip" title="The agent is waiting for this answer and continues as soon as you answer"><i></i>agent waiting</span>' : ''}<span class="q-state">${esc(ago(q.createdAt))}</span></div>
           <div class="q-text">${esc(q.question)}</div>
           ${q.details ? `<div class="q-details q-md">${md(q.details)}</div>` : ''}`;
         const del = `<button class="link${confirmQDelete === q.id ? ' danger-link' : ''}" data-qdelete="${esc(q.id)}" title="Remove without telling the agent (e.g. a duplicate)">${confirmQDelete === q.id ? 'Click again to delete' : 'Delete'}</button>`;
@@ -790,9 +803,17 @@
           <button class="link" data-qreceived="${esc(q.id)}" title="The agent already has this answer (e.g. it said so in the chat)">Mark as received</button>
           <button class="link" data-qhide="${esc(q.id)}" title="Remove from the board">Remove</button></div></div>`;
     };
-    body.innerHTML = (open.length ? open.map(qHtml).join('') : '<div class="empty">No open questions</div>') +
+    const waiters = (state.waiters || []).filter((w) => projectFilter === '__all' || w.project === projectFilter);
+    const waitHtml = waiters.map((w) => `<div class="q-wait"><span class="dot"></span><div><b>${esc(w.askedBy || 'An agent')} is waiting for your answer</b>
+      <small>Answering continues it right away${w.until ? ` · waits until ${esc(time(Date.parse(w.until)))}` : ''}</small></div></div>`).join('');
+    const sup = Object.entries(state.waitSupport || {});
+    const supHtml = sup.length ? `<div class="wsupport"><div>Waiting without tokens (board_wait), per app:</div>${sup.map(([k, v]) => `<div class="row">
+      ${v.disabled ? `<span class="off">✕ ${esc(k)}: off — the app ended waits after ~${esc(v.lastCutAfterSec)}s</span><button data-wreset="${esc(k)}">Try again</button>`
+        : v.cuts ? `<span>• ${esc(k)}: ended early once (after ~${esc(v.lastCutAfterSec)}s), one more and it turns off</span>`
+          : `<span class="ok">✓ ${esc(k)}: works${v.longestSec ? ` (longest wait ${esc(Math.round(v.longestSec / 60))} min)` : ''}</span>`}</div>`).join('')}</div>` : '';
+    body.innerHTML = waitHtml + (open.length ? open.map(qHtml).join('') : '<div class="empty">No open questions</div>') +
       (answered.length ? `<div class="section-label">Answered · waiting for the agent</div>${answered.map(qHtml).join('')}` : '') +
-      (history.length ? `<button class="hist-toggle" id="histToggle">${showHistory ? '▾' : '▸'} Received by agents (${history.length})</button>${showHistory ? history.map(qHtml).join('') : ''}` : '');
+      (history.length ? `<button class="hist-toggle" id="histToggle">${showHistory ? '▾' : '▸'} Received by agents (${history.length})</button>${showHistory ? history.map(qHtml).join('') : ''}` : '') + supHtml;
     if (focused) { const ta = body.querySelector(`[data-qtext="${CSS.escape(focused)}"]`); if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = ta.value.length; } }
     if (fe) { const el = body.querySelector(`[data-ff="${CSS.escape(fe.q)}"][data-name="${CSS.escape(fe.name)}"]`); if (el) { el.focus(); try { if (fe.pos != null) el.selectionStart = el.selectionEnd = fe.pos; } catch { /* not a text field */ } } }
   }
@@ -940,6 +961,7 @@
     }
     else if (d.qsend) sendAnswer(d.qsend, 'answer', draftOf(d.qsend));
     else if (d.qreopen) op('reopen', { id: d.qreopen }).catch(alertError);
+    else if (d.wreset) op('waitReset', { client: d.wreset }).then(() => toast(`board_wait turned on again for ${d.wreset}`, 'ok')).catch(alertError);
     else if (d.qreceived) op('markDelivered', { id: d.qreceived }).then(() => toast(`${d.qreceived} marked as received`, 'ok')).catch(alertError);
     else if (d.qdelete) {
       if (confirmQDelete === d.qdelete) { confirmQDelete = null; op('hideQuestion', { id: d.qdelete }).then(() => toast(`${d.qdelete} deleted`, 'ok')).catch(alertError); }
